@@ -2,17 +2,18 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Eigenbedarf Update</title>
+    <title>Energie-Monitor - Kosten-Analyse</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
-        :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --usage: #2980b9; --bg: #f4f7f6; }
+        :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --usage: #2980b9; --bg: #f4f7f6; --money: #27ae60; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
         .container { max-width: 1600px; margin: auto; }
         .stats-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; margin-bottom: 25px; }
         .stat-card { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; border-bottom: 4px solid #ddd; }
-        .stat-card h3 { font-size: 0.65em; text-transform: uppercase; color: #7f8c8d; margin: 0; white-space: nowrap; }
-        .stat-card p { margin: 8px 0 0; font-size: 1.1em; font-weight: bold; }
+        .stat-card h3 { font-size: 0.7em; text-transform: uppercase; color: #7f8c8d; margin: 0; white-space: nowrap; }
+        .stat-card p { margin: 8px 0 0; font-size: 1.15em; font-weight: bold; line-height: 1.2; }
+        .sub-val { display: block; font-size: 0.75em; color: #7f8c8d; font-weight: normal; margin-top: 4px; }
         .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .main-chart-container { height: 450px; position: relative; }
         .full-chart-container { height: 350px; position: relative; }
@@ -24,11 +25,11 @@
 <body>
 
 <div class="container">
-    <h1 style="text-align:center">📊 Energie- & Heizungs-Analyse</h1>
+    <h1 style="text-align:center">📊 Energie- & Kosten-Analyse</h1>
     
     <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Dateien auswählen...</div>
+        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Warte auf Daten...</div>
     </div>
 
     <div class="stats-grid">
@@ -43,12 +44,12 @@
     </div>
 
     <div class="chart-card">
-        <h2>Energiebilanz (Balken-Diagramm)</h2>
+        <h2>Energiebilanz (kWh)</h2>
         <div class="main-chart-container"><canvas id="chartMain"></canvas></div>
     </div>
 
     <div class="chart-card">
-        <h2>Energie-Trends (Liniendiagramm)</h2>
+        <h2>Energie-Trends (kWh)</h2>
         <div class="full-chart-container"><canvas id="chartLines"></canvas></div>
     </div>
 
@@ -64,6 +65,10 @@
 </div>
 
 <script>
+    // PREISE HIER ANPASSEN
+    const PREIS_NETZBEZUG = 0.28;   // 28 Cent pro kWh
+    const VERGUETUNG_PV = 0.0795;   // 7,95 Cent pro kWh
+
     let sunStore = {}; 
     let wpStore = {};
     let charts = {};
@@ -134,8 +139,7 @@
             
             return { 
                 m, ...sunStore[m], ...wpStore[m],
-                pvGen: pvGen,
-                totalNeed: totalNeed,
+                pvGen: pvGen, totalNeed: totalNeed,
                 housePure: Math.max(0, self - wpElec),
                 wpElec: wpElec,
                 autarky: totalNeed > 0 ? (self / totalNeed * 100) : 0,
@@ -152,12 +156,18 @@
         document.getElementById('txtPvSelfTotal').innerText = tSelf.toFixed(0) + " kWh";
         document.getElementById('txtPvUsagePct').innerText = (tPv > 0) ? (tSelf/tPv*100).toFixed(1) + "%" : "-";
         document.getElementById('txtAutarky').innerText = (tGrid+tSelf > 0) ? (tSelf/(tGrid+tSelf)*100).toFixed(1)+"%" : "-";
-        document.getElementById('txtFeedTotal').innerText = tFeed.toFixed(0) + " kWh";
+        
+        // Netzbezug mit Kosten
+        const gridCost = (tGrid * PREIS_NETZBEZUG).toFixed(2);
+        document.getElementById('txtGridTotal').innerHTML = `${tGrid.toFixed(0)} kWh <span class="sub-val">(${gridCost} € Kosten)</span>`;
+        
+        // Einspeisung mit Vergütung
+        const feedMoney = (tFeed * VERGUETUNG_PV).toFixed(2);
+        document.getElementById('txtFeedTotal').innerHTML = `${tFeed.toFixed(0)} kWh <span class="sub-val">(${feedMoney} € Ertrag)</span>`;
         
         const active = data.filter(d => d.hasHeat);
         document.getElementById('txtJaz').innerText = active.reduce((s,d)=>s+d.elec,0) > 0 ? (active.reduce((s,d)=>s+d.heat,0)/active.reduce((s,d)=>s+d.elec,0)).toFixed(2) : "-";
         document.getElementById('txtWpTotal').innerText = data.reduce((s,d)=>s+d.wpElec,0).toFixed(0)+" kWh";
-        document.getElementById('txtGridTotal').innerText = tGrid.toFixed(0)+" kWh";
 
         Object.values(charts).forEach(c => { if(c) c.destroy(); });
 
@@ -181,8 +191,8 @@
             data: {
                 labels: sorted,
                 datasets: [
-                    { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), borderColor: '#f1c40f', backgroundColor: '#f1c40f', tension: 0.3, fill: false },
-                    { label: 'PV Eigenbedarf', data: data.map(d=>d.self), borderColor: '#2ecc71', backgroundColor: '#2ecc71', tension: 0.3, fill: false },
+                    { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), borderColor: '#f1c40f', tension: 0.3, fill: false },
+                    { label: 'PV Eigenbedarf', data: data.map(d=>d.self), borderColor: '#2ecc71', tension: 0.3, fill: false },
                     { label: 'Gesamtbedarf', data: data.map(d=>d.totalNeed), borderColor: '#2c3e50', borderDash: [5, 5], tension: 0.3, fill: false },
                     { label: 'WP Strom', data: data.map(d=>d.wpElec), borderColor: '#9b59b6', tension: 0.3, fill: false }
                 ]

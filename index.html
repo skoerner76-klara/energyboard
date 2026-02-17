@@ -2,22 +2,22 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Stable Fix</title>
+    <title>Energie-Monitor - Eigenbedarf Update</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --usage: #2980b9; --bg: #f4f7f6; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
         .container { max-width: 1600px; margin: auto; }
-        .stats-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 10px; margin-bottom: 25px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; margin-bottom: 25px; }
         .stat-card { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; border-bottom: 4px solid #ddd; }
-        .stat-card h3 { font-size: 0.72em; text-transform: uppercase; color: #7f8c8d; margin: 0; white-space: nowrap; }
-        .stat-card p { margin: 8px 0 0; font-size: 1.25em; font-weight: bold; }
+        .stat-card h3 { font-size: 0.65em; text-transform: uppercase; color: #7f8c8d; margin: 0; white-space: nowrap; }
+        .stat-card p { margin: 8px 0 0; font-size: 1.1em; font-weight: bold; }
         .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .main-chart-container { height: 500px; position: relative; }
+        .main-chart-container { height: 450px; position: relative; }
+        .full-chart-container { height: 350px; position: relative; }
         .side-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .side-chart-container { height: 350px; position: relative; }
-        .full-chart-container { height: 350px; position: relative; }
         .upload-area { background: #fff; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px; border: 3px dashed #3498db; }
     </style>
 </head>
@@ -28,7 +28,7 @@
     
     <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Dateien auswählen oder automatischer Server-Ladevorgang...</div>
+        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Dateien auswählen...</div>
     </div>
 
     <div class="stats-grid">
@@ -36,14 +36,20 @@
         <div class="stat-card" style="border-color: var(--feedin)"><h3>JAZ (Ø)</h3><p id="txtJaz">-</p></div>
         <div class="stat-card" style="border-color: var(--usage)"><h3>PV Nutzung (%)</h3><p id="txtPvUsagePct">-</p></div>
         <div class="stat-card" style="border-color: var(--pv)"><h3>PV Erzeugung</h3><p id="txtPvTotal">-</p></div>
-        <div class="stat-card" style="border-color: var(--usage)"><h3>PV Nutzung (kWh)</h3><p id="txtPvUsageKwh">-</p></div>
+        <div class="stat-card" style="border-color: var(--house)"><h3>PV Eigenbedarf</h3><p id="txtPvSelfTotal">-</p></div>
         <div class="stat-card" style="border-color: var(--wp)"><h3>WP Strom</h3><p id="txtWpTotal">-</p></div>
         <div class="stat-card" style="border-color: var(--grid)"><h3>Netzbezug</h3><p id="txtGridTotal">-</p></div>
+        <div class="stat-card" style="border-color: var(--feedin)"><h3>Einspeisung</h3><p id="txtFeedTotal">-</p></div>
     </div>
 
     <div class="chart-card">
-        <h2>Energiebilanz (kWh)</h2>
+        <h2>Energiebilanz (Balken-Diagramm)</h2>
         <div class="main-chart-container"><canvas id="chartMain"></canvas></div>
+    </div>
+
+    <div class="chart-card">
+        <h2>Energie-Trends (Liniendiagramm)</h2>
+        <div class="full-chart-container"><canvas id="chartLines"></canvas></div>
     </div>
 
     <div class="side-charts">
@@ -68,7 +74,6 @@
         return parseFloat(s) || 0;
     }
 
-    // Automatisches Laden für den Hoster
     window.onload = () => {
         ['solar.csv', 'wp.csv'].forEach(file => {
             fetch(file).then(r => r.ok ? r.text() : null).then(text => {
@@ -90,7 +95,6 @@
                     const p = key.split(".");
                     key = `${p[p.length-1]}-${p[p.length-2].padStart(2, '0')}`;
                 }
-                // HIER WIEDER ORIGINAL-LOGIK: elec = m + r
                 const h = cleanNum(row[7]), m = cleanNum(row[12]), r = cleanNum(row[17]);
                 const v = cleanNum(row[21]), w = cleanNum(row[22]);
                 if (m+r > 0 || h > 0) {
@@ -131,6 +135,7 @@
             return { 
                 m, ...sunStore[m], ...wpStore[m],
                 pvGen: pvGen,
+                totalNeed: totalNeed,
                 housePure: Math.max(0, self - wpElec),
                 wpElec: wpElec,
                 autarky: totalNeed > 0 ? (self / totalNeed * 100) : 0,
@@ -141,11 +146,13 @@
         const tGrid = data.reduce((s,d)=>s+(d.grid||0),0);
         const tSelf = data.reduce((s,d)=>s+(d.self||0),0);
         const tPv = data.reduce((s,d)=>s+d.pvGen,0);
+        const tFeed = data.reduce((s,d)=>s+(d.feed||0),0);
         
         document.getElementById('txtPvTotal').innerText = tPv.toFixed(0) + " kWh";
-        document.getElementById('txtPvUsageKwh').innerText = tSelf.toFixed(0) + " kWh";
+        document.getElementById('txtPvSelfTotal').innerText = tSelf.toFixed(0) + " kWh";
         document.getElementById('txtPvUsagePct').innerText = (tPv > 0) ? (tSelf/tPv*100).toFixed(1) + "%" : "-";
         document.getElementById('txtAutarky').innerText = (tGrid+tSelf > 0) ? (tSelf/(tGrid+tSelf)*100).toFixed(1)+"%" : "-";
+        document.getElementById('txtFeedTotal').innerText = tFeed.toFixed(0) + " kWh";
         
         const active = data.filter(d => d.hasHeat);
         document.getElementById('txtJaz').innerText = active.reduce((s,d)=>s+d.elec,0) > 0 ? (active.reduce((s,d)=>s+d.heat,0)/active.reduce((s,d)=>s+d.elec,0)).toFixed(2) : "-";
@@ -164,6 +171,20 @@
                     { label: 'Haus (Eigen)', data: data.map(d=>d.housePure), backgroundColor: '#2ecc71', stack: '2' },
                     { label: 'WP (Eigen)', data: data.map(d=>d.wpElec), backgroundColor: '#9b59b6', stack: '2' },
                     { label: 'Netzbezug', data: data.map(d=>d.grid||0), backgroundColor: '#e74c3c', stack: '3' }
+                ]
+            },
+            options: { responsive: true, maintainAspectRatio: false }
+        });
+
+        charts.lines = new Chart(document.getElementById('chartLines'), {
+            type: 'line',
+            data: {
+                labels: sorted,
+                datasets: [
+                    { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), borderColor: '#f1c40f', backgroundColor: '#f1c40f', tension: 0.3, fill: false },
+                    { label: 'PV Eigenbedarf', data: data.map(d=>d.self), borderColor: '#2ecc71', backgroundColor: '#2ecc71', tension: 0.3, fill: false },
+                    { label: 'Gesamtbedarf', data: data.map(d=>d.totalNeed), borderColor: '#2c3e50', borderDash: [5, 5], tension: 0.3, fill: false },
+                    { label: 'WP Strom', data: data.map(d=>d.wpElec), borderColor: '#9b59b6', tension: 0.3, fill: false }
                 ]
             },
             options: { responsive: true, maintainAspectRatio: false }

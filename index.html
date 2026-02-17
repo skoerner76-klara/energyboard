@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Custom Range</title>
+    <title>Energie-Monitor - Pro Analyse</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -10,19 +10,19 @@
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
         .container { max-width: 1600px; margin: auto; }
         
-        /* Tab-Styling */
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }
         .tab-btn { padding: 10px 20px; border-radius: 8px; border: none; background: #ddd; cursor: pointer; font-weight: bold; transition: 0.3s; }
         .tab-btn.active { background: #3498db; color: white; box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3); }
 
-        /* Range Selector Styling */
+        /* Range & Price Picker Styling */
         .range-picker { 
             background: #fff; padding: 15px; border-radius: 12px; margin-bottom: 20px; 
-            display: none; justify-content: center; align-items: center; gap: 15px; 
-            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            display: none; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #e0e0e0;
         }
         .range-picker.visible { display: flex; }
-        select { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-family: inherit; }
+        .input-group { display: flex; align-items: center; gap: 8px; font-size: 0.9em; font-weight: bold; }
+        select, input { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-family: inherit; width: 100px; }
 
         .stats-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; margin-bottom: 25px; }
         .stat-card { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; border-bottom: 4px solid #ddd; }
@@ -45,14 +45,17 @@
     
     <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Dateien hochladen...</div>
+        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Daten hochladen für interaktive Analyse...</div>
     </div>
 
     <div id="tabBar" class="tabs"></div>
 
     <div id="rangeSelector" class="range-picker">
-        <label>Von: <select id="selectStart"></select></label>
-        <label>Bis: <select id="selectEnd"></select></label>
+        <div class="input-group">Von: <select id="selectStart"></select></div>
+        <div class="input-group">Bis: <select id="selectEnd"></select></div>
+        <div style="width: 2px; height: 30px; background: #eee;"></div>
+        <div class="input-group">Preis (ct/kWh): <input type="number" id="inpPrice" step="0.01" placeholder="28"></div>
+        <div class="input-group">Grundgebühr (€): <input type="number" id="inpBase" step="0.01" placeholder="10.83"></div>
     </div>
 
     <div class="stats-grid">
@@ -76,13 +79,13 @@
 </div>
 
 <script>
-    const PREIS_NETZBEZUG = 0.28;
+    // STANDARDDATEN
+    const DEFAULT_PREIS = 0.28;
+    const DEFAULT_GG = 10.83;
     const VERGUETUNG_PV = 0.0795;
-    const GRUNDGEBUEHR_MONAT = 10.83;
 
     let sunStore = {}, wpStore = {}, charts = {};
-    let currentMode = 'All'; // 'All', 'Year', 'Custom'
-    let selectedYear = '';
+    let currentMode = 'All', selectedYear = '';
 
     window.onload = () => {
         ['solar.csv', 'wp.csv'].forEach(file => {
@@ -138,7 +141,6 @@
         const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         if (keys.length === 0) return;
 
-        // Tabs aufbauen
         const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
         const tabBar = document.getElementById('tabBar');
         tabBar.innerHTML = '';
@@ -159,16 +161,16 @@
         years.forEach(y => createBtn(y, 'Year', y));
         createBtn('Benutzerdefiniert', 'Custom');
 
-        // Selects füllen
         const startSel = document.getElementById('selectStart');
         const endSel = document.getElementById('selectEnd');
         startSel.innerHTML = endSel.innerHTML = '';
-        keys.forEach((k, i) => {
-            startSel.add(new Option(k, k));
-            endSel.add(new Option(k, k));
-        });
+        keys.forEach(k => { startSel.add(new Option(k, k)); endSel.add(new Option(k, k)); });
         endSel.selectedIndex = keys.length - 1;
-        startSel.onchange = endSel.onchange = () => render();
+
+        // Event-Listener für Live-Anpassungen
+        [startSel, endSel, document.getElementById('inpPrice'), document.getElementById('inpBase')].forEach(el => {
+            el.oninput = () => render();
+        });
 
         render();
     }
@@ -185,6 +187,13 @@
     function render() {
         let keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         
+        // Aktuelle Preise bestimmen (Manuell oder Standard)
+        let customPrice = parseFloat(document.getElementById('inpPrice').value) / 100;
+        let priceToUse = (!isNaN(customPrice) && customPrice > 0) ? customPrice : DEFAULT_PREIS;
+
+        let customBase = parseFloat(document.getElementById('inpBase').value);
+        let baseToUse = (!isNaN(customBase) && customBase >= 0) ? customBase : DEFAULT_GG;
+
         if (currentMode === 'Year') {
             keys = keys.filter(k => k.startsWith(selectedYear));
         } else if (currentMode === 'Custom') {
@@ -203,7 +212,9 @@
         });
 
         const tGrid = data.reduce((s,d)=>s+(d.grid||0),0), tSelf = data.reduce((s,d)=>s+(d.self||0),0), tPv = data.reduce((s,d)=>s+d.pvGen,0), tFeed = data.reduce((s,d)=>s+(d.feed||0),0);
-        const gridCostTotal = (tGrid * PREIS_NETZBEZUG + (keys.length * GRUNDGEBUEHR_MONAT)).toFixed(2);
+        
+        // Kostenberechnung mit den dynamischen Preisen
+        const gridCostTotal = (tGrid * priceToUse + (keys.length * baseToUse)).toFixed(2);
         const feedMoney = (tFeed * VERGUETUNG_PV).toFixed(2);
 
         document.getElementById('txtPvTotal').innerText = tPv.toFixed(0) + " kWh";
@@ -217,6 +228,7 @@
         document.getElementById('txtJaz').innerText = active.reduce((s,d)=>s+d.elec,0) > 0 ? (active.reduce((s,d)=>s+d.heat,0)/active.reduce((s,d)=>s+d.elec,0)).toFixed(2) : "-";
         document.getElementById('txtWpTotal').innerText = data.reduce((s,d)=>s+d.wpElec,0).toFixed(0)+" kWh";
 
+        // Charts Refresh
         Object.values(charts).forEach(c => { if(c) c.destroy(); });
         const commonOptions = { responsive: true, maintainAspectRatio: false };
 

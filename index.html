@@ -2,18 +2,26 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Kosten-Analyse Pro</title>
+    <title>Energie-Monitor - Jahres-Tabs</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --usage: #2980b9; --bg: #f4f7f6; --money: #27ae60; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
         .container { max-width: 1600px; margin: auto; }
+        
+        /* Tab-Styling */
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
+        .tab-btn { padding: 10px 25px; border-radius: 8px; border: none; background: #ddd; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .tab-btn.active { background: #3498db; color: white; box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3); }
+        .tab-btn:hover { background: #bbb; }
+
         .stats-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; margin-bottom: 25px; }
         .stat-card { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; border-bottom: 4px solid #ddd; }
         .stat-card h3 { font-size: 0.7em; text-transform: uppercase; color: #7f8c8d; margin: 0; white-space: nowrap; }
         .stat-card p { margin: 8px 0 0; font-size: 1.15em; font-weight: bold; line-height: 1.2; }
         .sub-val { display: block; font-size: 0.75em; color: #7f8c8d; font-weight: normal; margin-top: 4px; }
+        
         .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .main-chart-container { height: 450px; position: relative; }
         .full-chart-container { height: 350px; position: relative; }
@@ -29,8 +37,10 @@
     
     <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Daten werden verarbeitet...</div>
+        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Dateien hochladen für Jahresansicht...</div>
     </div>
+
+    <div id="tabBar" class="tabs"></div>
 
     <div class="stats-grid">
         <div class="stat-card" style="border-color: var(--house)"><h3>Autarkie</h3><p id="txtAutarky">-</p></div>
@@ -44,7 +54,7 @@
     </div>
 
     <div class="chart-card">
-        <h2>Energiebilanz (kWh)</h2>
+        <h2 id="titleMain">Energiebilanz (kWh)</h2>
         <div class="main-chart-container"><canvas id="chartMain"></canvas></div>
     </div>
 
@@ -65,26 +75,21 @@
 </div>
 
 <script>
-    // PREISE & GEBÜHREN HIER ANPASSEN
-    const PREIS_NETZBEZUG = 0.293;       // 28 Cent pro kWh
-    const VERGUETUNG_PV = 0.0795;       // 7,95 Cent pro kWh
-    const GRUNDGEBUEHR_MONAT = 10.83;   // Grundgebühr pro Monat
+    const PREIS_NETZBEZUG = 0.28;
+    const VERGUETUNG_PV = 0.0795;
+    const GRUNDGEBUEHR_MONAT = 10.83;
 
     let sunStore = {}; 
     let wpStore = {};
     let charts = {};
-
-    function cleanNum(val) {
-        if (!val || val === "-" || val === "") return 0;
-        let s = val.toString().replace(/\./g, '').replace(',', '.');
-        return parseFloat(s) || 0;
-    }
+    let currentYear = 'All'; // Standard: Alles anzeigen
 
     window.onload = () => {
         ['solar.csv', 'wp.csv'].forEach(file => {
             fetch(file).then(r => r.ok ? r.text() : null).then(text => {
                 if(text) {
                     if (text.includes("PvToSite")) sunStore = parseSun(text); else wpStore = parseWp(text);
+                    updateYearTabs();
                     render();
                 }
             });
@@ -126,11 +131,53 @@
         return monthly;
     }
 
-    function render() {
-        const sorted = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
-        if (sorted.length === 0) return;
+    function cleanNum(val) {
+        if (!val || val === "-" || val === "") return 0;
+        let s = val.toString().replace(/\./g, '').replace(',', '.');
+        return parseFloat(s) || 0;
+    }
 
-        const data = sorted.map(m => {
+    function updateYearTabs() {
+        const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
+        const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
+        
+        const tabBar = document.getElementById('tabBar');
+        tabBar.innerHTML = '';
+        
+        // Button für Gesamtansicht
+        const allBtn = document.createElement('button');
+        allBtn.innerText = 'Gesamt';
+        allBtn.className = 'tab-btn' + (currentYear === 'All' ? ' active' : '');
+        allBtn.onclick = () => { currentYear = 'All'; updateActiveTab(); render(); };
+        tabBar.appendChild(allBtn);
+
+        // Buttons pro Jahr
+        years.forEach(yr => {
+            const btn = document.createElement('button');
+            btn.innerText = yr;
+            btn.className = 'tab-btn' + (currentYear === yr ? ' active' : '');
+            btn.onclick = () => { currentYear = yr; updateActiveTab(); render(); };
+            tabBar.appendChild(btn);
+        });
+    }
+
+    function updateActiveTab() {
+        document.querySelectorAll('.tab-btn').forEach(b => {
+            b.classList.toggle('active', b.innerText === currentYear || (b.innerText === 'Gesamt' && currentYear === 'All'));
+        });
+    }
+
+    function render() {
+        let keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
+        
+        // Filter nach Jahr
+        if (currentYear !== 'All') {
+            keys = keys.filter(k => k.startsWith(currentYear));
+        }
+
+        if (keys.length === 0) return;
+
+        const data = keys.map(m => {
             const wpElec = wpStore[m]?.elec || 0;
             const self = sunStore[m]?.self || 0;
             const feed = sunStore[m]?.feed || 0;
@@ -140,47 +187,44 @@
             
             return { 
                 m, ...sunStore[m], ...wpStore[m],
-                pvGen: pvGen, totalNeed: totalNeed,
+                pvGen, totalNeed,
                 housePure: Math.max(0, self - wpElec),
-                wpElec: wpElec,
+                wpElec,
                 autarky: totalNeed > 0 ? (self / totalNeed * 100) : 0,
                 usage: pvGen > 0 ? (self / pvGen * 100) : 0
             };
         });
 
+        // Stats kumulieren
         const tGrid = data.reduce((s,d)=>s+(d.grid||0),0);
         const tSelf = data.reduce((s,d)=>s+(d.self||0),0);
         const tPv = data.reduce((s,d)=>s+d.pvGen,0);
         const tFeed = data.reduce((s,d)=>s+(d.feed||0),0);
+        const anzahlMonate = data.length;
         
-        // Kostenberechnung inkl. Grundgebühr über die Anzahl der Monate
-        const anzahlMonate = sorted.length;
-        const gesamtGrundgebuehr = anzahlMonate * GRUNDGEBUEHR_MONAT;
-        const gridCostTotal = (tGrid * PREIS_NETZBEZUG + gesamtGrundgebuehr).toFixed(2);
-        
+        const gridCostTotal = (tGrid * PREIS_NETZBEZUG + (anzahlMonate * GRUNDGEBUEHR_MONAT)).toFixed(2);
+        const feedMoney = (tFeed * VERGUETUNG_PV).toFixed(2);
+
         document.getElementById('txtPvTotal').innerText = tPv.toFixed(0) + " kWh";
         document.getElementById('txtPvSelfTotal').innerText = tSelf.toFixed(0) + " kWh";
         document.getElementById('txtPvUsagePct').innerText = (tPv > 0) ? (tSelf/tPv*100).toFixed(1) + "%" : "-";
         document.getElementById('txtAutarky').innerText = (tGrid+tSelf > 0) ? (tSelf/(tGrid+tSelf)*100).toFixed(1)+"%" : "-";
-        
-        // Netzbezug mit Grundgebühr-Anteil
         document.getElementById('txtGridTotal').innerHTML = `${tGrid.toFixed(0)} kWh <span class="sub-val">(${gridCostTotal} € inkl. GG)</span>`;
-        
-        // Einspeisung
-        const feedMoney = (tFeed * VERGUETUNG_PV).toFixed(2);
         document.getElementById('txtFeedTotal').innerHTML = `${tFeed.toFixed(0)} kWh <span class="sub-val">(${feedMoney} € Ertrag)</span>`;
         
         const active = data.filter(d => d.hasHeat);
         document.getElementById('txtJaz').innerText = active.reduce((s,d)=>s+d.elec,0) > 0 ? (active.reduce((s,d)=>s+d.heat,0)/active.reduce((s,d)=>s+d.elec,0)).toFixed(2) : "-";
         document.getElementById('txtWpTotal').innerText = data.reduce((s,d)=>s+d.wpElec,0).toFixed(0)+" kWh";
 
-        // Charts Refresh
+        // Charts
         Object.values(charts).forEach(c => { if(c) c.destroy(); });
+
+        const commonOptions = { responsive: true, maintainAspectRatio: false };
 
         charts.main = new Chart(document.getElementById('chartMain'), {
             type: 'bar',
             data: {
-                labels: sorted,
+                labels: keys,
                 datasets: [
                     { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), backgroundColor: '#f1c40f', stack: '0' },
                     { label: 'Einspeisung', data: data.map(d=>d.feed||0), backgroundColor: '#e67e22', stack: '1' },
@@ -188,28 +232,26 @@
                     { label: 'WP (Eigen)', data: data.map(d=>d.wpElec), backgroundColor: '#9b59b6', stack: '2' },
                     { label: 'Netzbezug', data: data.map(d=>d.grid||0), backgroundColor: '#e74c3c', stack: '3' }
                 ]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
+            }, options: commonOptions
         });
 
         charts.lines = new Chart(document.getElementById('chartLines'), {
             type: 'line',
             data: {
-                labels: sorted,
+                labels: keys,
                 datasets: [
                     { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), borderColor: '#f1c40f', tension: 0.3, fill: false },
                     { label: 'PV Eigenbedarf', data: data.map(d=>d.self), borderColor: '#2ecc71', tension: 0.3, fill: false },
                     { label: 'Gesamtbedarf', data: data.map(d=>d.totalNeed), borderColor: '#2c3e50', borderDash: [5, 5], tension: 0.3, fill: false },
                     { label: 'WP Strom', data: data.map(d=>d.wpElec), borderColor: '#9b59b6', tension: 0.3, fill: false }
                 ]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
+            }, options: commonOptions
         });
 
         charts.eff = new Chart(document.getElementById('chartEff'), {
             type: 'line',
-            data: { labels: sorted, datasets: [{ label: 'JAZ', data: data.map(d=>(d.hasHeat && d.elec>0)?(d.heat/d.elec).toFixed(2):null), borderColor: '#e67e22', tension: 0.3 }] },
-            options: { responsive: true, maintainAspectRatio: false }
+            data: { labels: keys, datasets: [{ label: 'JAZ', data: data.map(d=>(d.hasHeat && d.elec>0)?(d.heat/d.elec).toFixed(2):null), borderColor: '#e67e22', tension: 0.3 }] },
+            options: commonOptions
         });
 
         charts.temp = new Chart(document.getElementById('chartHeizBalken'), {
@@ -217,20 +259,19 @@
             data: {
                 labels: data.filter(d=>d.hasHeat).map(d=>d.m),
                 datasets: [ { label: 'Außen', data: data.filter(d=>d.hasHeat).map(d=>d.tAussen||0), backgroundColor: '#3498db' }, { label: 'Vorlauf', data: data.filter(d=>d.hasHeat).map(d=>d.tVorlauf||0), backgroundColor: '#e74c3c' } ]
-            },
-            options: { responsive: true, maintainAspectRatio: false }
+            }, options: commonOptions
         });
 
         charts.aut = new Chart(document.getElementById('chartAutarky'), {
             type: 'line',
             data: {
-                labels: sorted,
+                labels: keys,
                 datasets: [
                     { label: 'Autarkie (%)', data: data.map(d=>d.autarky.toFixed(1)), borderColor: '#2ecc71', tension: 0.3 },
                     { label: 'PV Nutzung (%)', data: data.map(d=>d.usage.toFixed(1)), borderColor: '#2980b9', tension: 0.3 }
                 ]
             },
-            options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, max: 100 } } }
+            options: { ...commonOptions, scales: { y: { beginAtZero: true, max: 100 } } }
         });
     }
 
@@ -240,6 +281,7 @@
             reader.onload = (ev) => {
                 const text = ev.target.result;
                 if (text.includes("PvToSite")) sunStore = parseSun(text); else wpStore = parseWp(text);
+                updateYearTabs();
                 render();
             };
             reader.readAsText(file);

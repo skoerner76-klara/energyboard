@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Kosten-Analyse</title>
+    <title>Energie-Monitor - Kosten-Analyse Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -29,7 +29,7 @@
     
     <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Warte auf Daten...</div>
+        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Daten werden verarbeitet...</div>
     </div>
 
     <div class="stats-grid">
@@ -65,9 +65,10 @@
 </div>
 
 <script>
-    // PREISE HIER ANPASSEN
-    const PREIS_NETZBEZUG = 0.293;   // 28 Cent pro kWh
-    const VERGUETUNG_PV = 0.0795;   // 7,95 Cent pro kWh
+    // PREISE & GEBÜHREN HIER ANPASSEN
+    const PREIS_NETZBEZUG = 0.293;       // 28 Cent pro kWh
+    const VERGUETUNG_PV = 0.0795;       // 7,95 Cent pro kWh
+    const GRUNDGEBUEHR_MONAT = 10.83;   // Grundgebühr pro Monat
 
     let sunStore = {}; 
     let wpStore = {};
@@ -152,16 +153,20 @@
         const tPv = data.reduce((s,d)=>s+d.pvGen,0);
         const tFeed = data.reduce((s,d)=>s+(d.feed||0),0);
         
+        // Kostenberechnung inkl. Grundgebühr über die Anzahl der Monate
+        const anzahlMonate = sorted.length;
+        const gesamtGrundgebuehr = anzahlMonate * GRUNDGEBUEHR_MONAT;
+        const gridCostTotal = (tGrid * PREIS_NETZBEZUG + gesamtGrundgebuehr).toFixed(2);
+        
         document.getElementById('txtPvTotal').innerText = tPv.toFixed(0) + " kWh";
         document.getElementById('txtPvSelfTotal').innerText = tSelf.toFixed(0) + " kWh";
         document.getElementById('txtPvUsagePct').innerText = (tPv > 0) ? (tSelf/tPv*100).toFixed(1) + "%" : "-";
         document.getElementById('txtAutarky').innerText = (tGrid+tSelf > 0) ? (tSelf/(tGrid+tSelf)*100).toFixed(1)+"%" : "-";
         
-        // Netzbezug mit Kosten
-        const gridCost = (tGrid * PREIS_NETZBEZUG).toFixed(2);
-        document.getElementById('txtGridTotal').innerHTML = `${tGrid.toFixed(0)} kWh <span class="sub-val">(${gridCost} € Kosten)</span>`;
+        // Netzbezug mit Grundgebühr-Anteil
+        document.getElementById('txtGridTotal').innerHTML = `${tGrid.toFixed(0)} kWh <span class="sub-val">(${gridCostTotal} € inkl. GG)</span>`;
         
-        // Einspeisung mit Vergütung
+        // Einspeisung
         const feedMoney = (tFeed * VERGUETUNG_PV).toFixed(2);
         document.getElementById('txtFeedTotal').innerHTML = `${tFeed.toFixed(0)} kWh <span class="sub-val">(${feedMoney} € Ertrag)</span>`;
         
@@ -169,6 +174,7 @@
         document.getElementById('txtJaz').innerText = active.reduce((s,d)=>s+d.elec,0) > 0 ? (active.reduce((s,d)=>s+d.heat,0)/active.reduce((s,d)=>s+d.elec,0)).toFixed(2) : "-";
         document.getElementById('txtWpTotal').innerText = data.reduce((s,d)=>s+d.wpElec,0).toFixed(0)+" kWh";
 
+        // Charts Refresh
         Object.values(charts).forEach(c => { if(c) c.destroy(); });
 
         charts.main = new Chart(document.getElementById('chartMain'), {

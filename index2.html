@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor Pro - Clean Version</title>
+    <title>Energie-Monitor Pro - Fix Balken 3</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -24,7 +24,7 @@
 
 <div class="container">
     <h1 style="text-align:center">📊 Energie-Analyse Pro</h1>
-    <div id="statusLine" style="text-align:center; color:#3498db; margin-bottom:15px;">Daten-Sync aktiv...</div>
+    <div id="statusLine" style="text-align:center; color:#3498db; margin-bottom:15px;">Synchronisiere mit GitHub...</div>
 
     <div id="tabBar" class="tabs"></div>
 
@@ -36,7 +36,7 @@
     </div>
 
     <div class="donut-row">
-        <div class="chart-card"><h2>Energiequellen Haus</h2><div style="height:200px"><canvas id="donutSources"></canvas></div></div>
+        <div class="chart-card"><h2>Energiequellen Haus & WP</h2><div style="height:200px"><canvas id="donutSources"></canvas></div></div>
         <div class="chart-card"><h2>PV Nutzung</h2><div style="height:200px"><canvas id="donutUsage"></canvas></div></div>
     </div>
 
@@ -56,7 +56,7 @@
             try {
                 const res = await fetch(file + '?t=' + Date.now());
                 if (res.ok) processData(await res.text(), file);
-            } catch(e) { console.log("Ladefehler", file); }
+            } catch(e) { console.log("Fehler beim Laden:", file); }
         }
     }
 
@@ -68,12 +68,12 @@
     };
 
     function processData(text, name) {
-        if (text.includes("PvToSite") || name.includes("solar")) {
+        if (text.includes("PvToSite") || name.toLowerCase().includes("solar")) {
             sunStore = parseSun(text); localStorage.setItem('sunStore', JSON.stringify(sunStore));
         } else {
             wpStore = parseWp(text); localStorage.setItem('wpStore', JSON.stringify(wpStore));
         }
-        document.getElementById('statusLine').innerText = "Daten von GitHub geladen";
+        document.getElementById('statusLine').innerText = "Daten aktuell";
         initDashboard();
     }
 
@@ -126,7 +126,7 @@
         let keys = currentMode === 'Year' ? allKeys.filter(k => k.startsWith(selectedYear)) : allKeys;
         const data = keys.map(k => {
             const s = sunStore[k] || {grid:0, self:0, feed:0}, w = wpStore[k] || {elec:0, heat:0};
-            return { k, ...s, ...w, pvGen: s.self + s.feed, housePure: Math.max(0, s.self - w.elec) };
+            return { k, ...s, ...w, pvGen: s.self + s.feed };
         });
 
         const tG = data.reduce((a,b)=>a+b.grid,0), tS = data.reduce((a,b)=>a+b.self,0), tF = data.reduce((a,b)=>a+b.feed,0), tP = data.reduce((a,b)=>a+b.pvGen,0);
@@ -139,8 +139,8 @@
         Object.values(charts).forEach(c => c?.destroy());
         const o = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } };
 
-        charts.ds = new Chart(document.getElementById('donutSources'), { type:'doughnut', data:{labels:['PV','Netz'],datasets:[{data:[tS,tG],backgroundColor:['#2ecc71','#e74c3c']}]}, options:o });
-        charts.du = new Chart(document.getElementById('donutUsage'), { type:'doughnut', data:{labels:['Eigen','Einspeisung'],datasets:[{data:[tS,tF],backgroundColor:['#2ecc71','#e67e22']}]}, options:o });
+        charts.ds = new Chart(document.getElementById('donutSources'), { type:'doughnut', data:{labels:['PV Eigenstrom','Netzbezug'],datasets:[{data:[tS,tG],backgroundColor:['#2ecc71','#e74c3c']}]}, options:o });
+        charts.du = new Chart(document.getElementById('donutUsage'), { type:'doughnut', data:{labels:['Eigenverbrauch','Einspeisung'],datasets:[{data:[tS,tF],backgroundColor:['#2ecc71','#e67e22']}]}, options:o });
 
         charts.main = new Chart(document.getElementById('chartMain'), {
             type: 'bar',
@@ -149,9 +149,9 @@
                 datasets: [
                     { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), backgroundColor: '#f1c40f', stack: 'B1' },
                     { label: 'Einspeisung', data: data.map(d=>d.feed), backgroundColor: '#e67e22', stack: 'B2' },
-                    { label: 'Eigennutzung Haus', data: data.map(d=>d.housePure), backgroundColor: '#2ecc71', stack: 'B3' },
+                    { label: 'PV-Eigenstrom (Haus+WP)', data: data.map(d=>d.self), backgroundColor: '#2ecc71', stack: 'B3' },
                     { label: 'Netzbezug', data: data.map(d=>d.grid), backgroundColor: '#e74c3c', stack: 'B3' },
-                    { label: 'WP Strom', data: data.map(d=>d.elec), backgroundColor: '#9b59b6', stack: 'B4' }
+                    { label: 'Wärmepumpe (Total)', data: data.map(d=>d.elec), backgroundColor: '#9b59b6', stack: 'B4' }
                 ]
             },
             options: { ...o, scales: { x: { stacked: false }, y: { stacked: true } } }

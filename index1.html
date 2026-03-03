@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Real Production Fix</title>
+    <title>Energie-Monitor - Komplett-Fix</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -14,10 +14,13 @@
         .tab-btn.active { background: #3498db; color: white; }
         .range-picker { background: #fff; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: none; justify-content: center; align-items: center; gap: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .range-picker.visible { display: flex; }
+        .input-group { display: flex; align-items: center; gap: 8px; font-size: 0.9em; font-weight: bold; }
+        input { padding: 8px; border-radius: 5px; border: 1px solid #ccc; width: 80px; }
         .stats-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; margin-bottom: 25px; }
         .stat-card { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; border-bottom: 4px solid #ddd; }
         .stat-card h3 { font-size: 0.65em; text-transform: uppercase; color: #7f8c8d; margin: 0; }
-        .stat-card p { margin: 8px 0 0; font-size: 1.05em; font-weight: bold; }
+        .stat-card p { margin: 8px 0 0; font-size: 1.05em; font-weight: bold; line-height: 1.2; }
+        .sub-val { display: block; font-size: 0.75em; color: #7f8c8d; font-weight: normal; margin-top: 4px; }
         .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
         .main-chart-container { height: 400px; position: relative; }
         .side-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
@@ -31,15 +34,14 @@
     
     <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Dateien (solar.csv / wp.csv) werden gesucht...</div>
+        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Warte auf Daten (solar.csv / wp.csv)...</div>
     </div>
 
     <div id="tabBar" class="tabs"></div>
 
     <div id="rangeSelector" class="range-picker">
-        Von: <select id="selectStart"></select> Bis: <select id="selectEnd"></select>
-        Preis: <input type="number" id="inpPrice" step="0.01"> ct
-        GG: <input type="number" id="inpBase" step="0.01"> €
+        <div class="input-group">Preis (ct): <input type="number" id="inpPrice" step="0.01"></div>
+        <div class="input-group">GG (€): <input type="number" id="inpBase" step="0.01"></div>
     </div>
 
     <div class="stats-grid">
@@ -47,7 +49,7 @@
         <div class="stat-card" style="border-color: var(--feedin)"><h3>JAZ (Ø)</h3><p id="txtJaz">-</p></div>
         <div class="stat-card" style="border-color: var(--usage)"><h3>PV Nutzung</h3><p id="txtPvUsagePct">-</p></div>
         <div class="stat-card" style="border-color: var(--pv)"><h3>PV Erzeugung</h3><p id="txtPvTotal">-</p></div>
-        <div class="stat-card" style="border-color: var(--house)"><h3>Eigenbedarf</h3><p id="txtPvSelfTotal">-</p></div>
+        <div class="stat-card" style="border-color: var(--house)"><h3>Eigenverbrauch</h3><p id="txtPvSelfTotal">-</p></div>
         <div class="stat-card" style="border-color: var(--wp)"><h3>WP Strom</h3><p id="txtWpTotal">-</p></div>
         <div class="stat-card" style="border-color: var(--grid)"><h3>Netzbezug</h3><p id="txtGridTotal">-</p></div>
         <div class="stat-card" style="border-color: var(--feedin)"><h3>Einspeisung</h3><p id="txtFeedTotal">-</p></div>
@@ -55,9 +57,15 @@
     </div>
 
     <div class="chart-card"><h2>Energiebilanz (kWh)</h2><div class="main-chart-container"><canvas id="chartMain"></canvas></div></div>
+    
     <div class="side-charts">
         <div class="chart-card"><h2>Trends</h2><div style="height:300px"><canvas id="chartLines"></canvas></div></div>
         <div class="chart-card"><h2>Autarkie %</h2><div style="height:300px"><canvas id="chartAutarky"></canvas></div></div>
+    </div>
+
+    <div class="side-charts">
+        <div class="chart-card"><h2>Monats-JAZ</h2><div style="height:300px"><canvas id="chartEff"></canvas></div></div>
+        <div class="chart-card"><h2>Temperaturen (°C)</h2><div style="height:300px"><canvas id="chartTemp"></canvas></div></div>
     </div>
 </div>
 
@@ -68,8 +76,8 @@
     window.onload = () => {
         const savedPrice = localStorage.getItem('energy_price') || "28";
         const savedBase = localStorage.getItem('energy_base') || "10.83";
-        document.getElementById('inpPrice').value = (parseFloat(savedPrice) * (savedPrice.includes('.') ? 1 : 1)).toFixed(2);
-        document.getElementById('inpBase').value = parseFloat(savedBase).toFixed(2);
+        document.getElementById('inpPrice').value = savedPrice;
+        document.getElementById('inpBase').value = savedBase;
 
         Promise.all([
             fetch('solar.csv').then(r => r.ok ? r.text() : null).catch(() => null),
@@ -77,7 +85,7 @@
         ]).then(([s, w]) => {
             if(s) sunStore = parseSun(s);
             if(w) wpStore = parseWp(w);
-            if(s || w) { document.getElementById('statusLine').innerText = "Daten geladen."; initDashboard(); }
+            if(s || w) { document.getElementById('statusLine').innerText = "Dateien geladen."; initDashboard(); }
         });
     };
 
@@ -85,10 +93,10 @@
         const rows = Papa.parse(csvText, {header: true, skipEmptyLines: true}).data;
         const monthly = {};
         rows.forEach(row => {
-            const time = (row.Time || row.time || "");
+            const time = row.Time || row.time || "";
             if (time.length < 7) return;
             const key = time.substring(0, 7);
-            if (!monthly[key]) monthly[key] = { grid: 0, self: 0, feed: 0, pvGen: 0 };
+            if (!monthly[key]) monthly[key] = { grid: 0, self: 0, feed: 0, pvGen: 0, houseCons: 0 };
             
             const p2s = parseFloat(row.PvToSite) || 0;
             const p2g = parseFloat(row.PvToGrid) || 0;
@@ -98,14 +106,14 @@
             const g2s = parseFloat(row.GridToSite) || 0;
             const g2b = parseFloat(row.GridToBattery) || 0;
 
-            // REALE ERZEUGUNG: Alles was von den Modulen kam
             monthly[key].pvGen += (p2s + p2g + p2b);
-            // REALE EINSPEISUNG: Direkt PV + Batterie Entladung ins Netz
             monthly[key].feed += (p2g + b2g);
-            // REALER EIGENVERBRAUCH: Direkt PV + Batterie Entladung ins Haus
-            monthly[key].self += (p2s + b2s);
-            // REALER BEZUG: Netz zu Haus + Netz zu Batterie
             monthly[key].grid += (g2s + g2b);
+            // Eigenbedarf aus PV: Was direkt verbraucht wurde + was in die Batterie ging (abzgl. Verluste/Netzeinspeisung aus Akku)
+            // Vereinfacht für die Bilanz: PV Erzeugung minus Netzeinspeisung
+            monthly[key].self += Math.max(0, (p2s + p2g + p2b) - p2g); 
+            // Tatsächlicher Hausverbrauch:
+            monthly[key].houseCons += (p2s + b2s + g2s);
         });
         return monthly;
     }
@@ -118,7 +126,8 @@
                 let key = row[1];
                 if (key.includes(".")) { const p = key.split("."); key = `${p[p.length-1]}-${p[p.length-2].padStart(2, '0')}`; }
                 const h = cleanNum(row[7]), m = cleanNum(row[12]), r = cleanNum(row[17]);
-                if (m+r > 0 || h > 0) monthly[key] = { elec: (m + r), heat: (h+m+r), hasHeat: h > 0.5 };
+                const v = cleanNum(row[21]), w = cleanNum(row[22]);
+                if (m+r > 0 || h > 0) monthly[key] = { elec: (m + r), heat: (h+m+r), tAussen: v, tVorlauf: w, hasHeat: h > 0.5 };
             }
         });
         return monthly;
@@ -138,13 +147,10 @@
         };
         createBtn('Gesamt', 'All');
         years.forEach(y => createBtn(y, 'Year', y));
-        const startSel = document.getElementById('selectStart'), endSel = document.getElementById('selectEnd');
-        startSel.innerHTML = endSel.innerHTML = '';
-        keys.forEach(k => { startSel.add(new Option(k, k)); endSel.add(new Option(k, k)); });
-        [startSel, endSel, document.getElementById('inpPrice'), document.getElementById('inpBase')].forEach(el => {
+        
+        [document.getElementById('inpPrice'), document.getElementById('inpBase')].forEach(el => {
             el.oninput = () => { 
-                if(el.id.includes('Price')) localStorage.setItem('energy_price', el.value);
-                if(el.id.includes('Base')) localStorage.setItem('energy_base', el.value);
+                localStorage.setItem(el.id === 'inpPrice' ? 'energy_price' : 'energy_base', el.value);
                 render(); 
             };
         });
@@ -154,37 +160,58 @@
     function render() {
         let keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         if (currentMode === 'Year') keys = keys.filter(k => k.startsWith(selectedYear));
+        if (keys.length === 0) return;
+
         const price = parseFloat(document.getElementById('inpPrice').value)/100 || 0.28;
         const base = parseFloat(document.getElementById('inpBase').value) || 10.83;
         
         const data = keys.map(m => {
-            const s = sunStore[m] || {grid:0, self:0, feed:0, pvGen:0};
-            const w = wpStore[m] || {elec:0, heat:0};
-            return { m, ...s, ...w, totalNeed: s.grid + s.self };
+            const s = sunStore[m] || {grid:0, self:0, feed:0, pvGen:0, houseCons:0};
+            const w = wpStore[m] || {elec:0, heat:0, tAussen:0, tVorlauf:0, hasHeat:false};
+            // Korrektur: Eigenverbrauch kann nicht höher als Erzeugung sein
+            const realSelf = Math.min(s.pvGen, s.self); 
+            return { m, ...s, ...w, realSelf, totalNeed: s.grid + s.houseCons - s.grid }; 
         });
 
-        const tGrid = data.reduce((a,b)=>a+b.grid,0), tSelf = data.reduce((a,b)=>a+b.self,0), tPv = data.reduce((a,b)=>a+b.pvGen,0), tFeed = data.reduce((a,b)=>a+b.feed,0);
-        const cost = (tGrid * price) + (keys.length * base);
-        const earn = tFeed * 0.0795;
+        const tGrid = data.reduce((a,b)=>a+b.grid,0), tPv = data.reduce((a,b)=>a+b.pvGen,0), tFeed = data.reduce((a,b)=>a+b.feed,0);
+        const tWp = data.reduce((a,b)=>a+b.elec,0), tSelf = data.reduce((a,b)=>a+b.realSelf,0);
+        const cost = (tGrid * price) + (keys.length * base), earn = tFeed * 0.0795;
 
         document.getElementById('txtPvTotal').innerText = tPv.toFixed(0) + " kWh";
         document.getElementById('txtPvSelfTotal').innerText = tSelf.toFixed(0) + " kWh";
-        document.getElementById('txtGridTotal').innerHTML = `${tGrid.toFixed(0)} kWh <br><small>${cost.toFixed(2)}€</small>`;
-        document.getElementById('txtFeedTotal').innerHTML = `${tFeed.toFixed(0)} kWh <br><small>${earn.toFixed(2)}€</small>`;
+        document.getElementById('txtWpTotal').innerText = tWp.toFixed(0) + " kWh";
+        document.getElementById('txtGridTotal').innerHTML = `${tGrid.toFixed(0)} kWh <span class="sub-val">(${cost.toFixed(2)}€)</span>`;
+        document.getElementById('txtFeedTotal').innerHTML = `${tFeed.toFixed(0)} kWh <span class="sub-val">(${earn.toFixed(2)}€)</span>`;
         document.getElementById('txtSaldo').innerText = (cost - earn).toFixed(2) + " €";
         document.getElementById('txtAutarky').innerText = (tGrid+tSelf > 0) ? (tSelf/(tGrid+tSelf)*100).toFixed(1)+"%" : "-";
         document.getElementById('txtPvUsagePct').innerText = (tPv > 0) ? (tSelf/tPv*100).toFixed(1)+"%" : "-";
+        
+        const active = data.filter(d => d.hasHeat);
+        document.getElementById('txtJaz').innerText = active.reduce((a,b)=>a+b.elec,0) > 0 ? (active.reduce((a,b)=>a+b.heat,0)/active.reduce((a,b)=>a+b.elec,0)).toFixed(2) : "-";
 
         Object.values(charts).forEach(c => c?.destroy());
-        const ctx = document.getElementById('chartMain');
-        charts.main = new Chart(ctx, {
+        const opt = { responsive: true, maintainAspectRatio: false };
+        
+        charts.main = new Chart(document.getElementById('chartMain'), {
             type: 'bar',
             data: { labels: keys, datasets: [
                 { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), backgroundColor: '#f1c40f' },
-                { label: 'Eigenbedarf', data: data.map(d=>d.self), backgroundColor: '#2ecc71' },
+                { label: 'WP Strom', data: data.map(d=>d.elec), backgroundColor: '#9b59b6' },
                 { label: 'Netzbezug', data: data.map(d=>d.grid), backgroundColor: '#e74c3c' },
                 { label: 'Einspeisung', data: data.map(d=>d.feed), backgroundColor: '#e67e22' }
-            ]}, options: { responsive: true, maintainAspectRatio: false }
+            ]}, options: opt
+        });
+
+        charts.aut = new Chart(document.getElementById('chartAutarky'), {
+            type: 'line', data: { labels: keys, datasets: [{ label: 'Autarkie %', data: data.map(d=>d.realSelf/(d.grid+d.realSelf)*100), borderColor: '#2ecc71' }] }, options: opt
+        });
+
+        charts.eff = new Chart(document.getElementById('chartEff'), {
+            type: 'line', data: { labels: keys, datasets: [{ label: 'JAZ', data: data.map(d=>d.hasHeat ? d.heat/d.elec : null), borderColor: '#e67e22' }] }, options: opt
+        });
+
+        charts.temp = new Chart(document.getElementById('chartTemp'), {
+            type: 'bar', data: { labels: keys, datasets: [{ label: 'Außen', data: data.map(d=>d.tAussen), backgroundColor: '#3498db' }, { label: 'Vorlauf', data: data.map(d=>d.tVorlauf), backgroundColor: '#e74c3c' }] }, options: opt
         });
     }
 

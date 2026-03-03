@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <title>Energie-Monitor - Komplettansicht</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --usage: #2980b9; --bg: #f4f7f6; --money: #27ae60; --saldo: #2c3e50; }
@@ -168,19 +169,22 @@
             keys = keys.filter(k => k >= start && k <= end); 
         }
         
-        const data = keys.map(m => {
+        const rawData = keys.map(m => {
             const wp = wpStore[m] || {elec:0, heat:0, tAussen:0, tVorlauf:0, hasHeat:false};
             const sun = sunStore[m] || {grid:0, self:0, feed:0, pvGen:0};
             const wpEigen = Math.min(wp.elec, sun.self);
-            return { m, ...wp, ...sun, wpEigen, houseEigen: Math.max(0, sun.self - wpEigen) };
+            const totalNeed = sun.self + sun.grid;
+            const autarky = totalNeed > 0 ? (sun.self / totalNeed * 100) : 0;
+            const usage = sun.pvGen > 0 ? (sun.self / sun.pvGen * 100) : 0;
+            return { m, ...wp, ...sun, wpEigen, houseEigen: Math.max(0, sun.self - wpEigen), autarky, usage };
         }).filter(d => (d.pvGen + d.grid + d.elec) > 0);
 
-        if (data.length === 0) return;
-        const activeKeys = data.map(d => d.m);
-        const tGrid = data.reduce((s,d)=>s+d.grid,0), tSelf = data.reduce((s,d)=>s+d.self,0), tPv = data.reduce((s,d)=>s+d.pvGen,0), tFeed = data.reduce((s,d)=>s+d.feed,0);
+        if (rawData.length === 0) return;
+        const activeKeys = rawData.map(d => d.m);
+        const tGrid = rawData.reduce((s,d)=>s+d.grid,0), tSelf = rawData.reduce((s,d)=>s+d.self,0), tPv = rawData.reduce((s,d)=>s+d.pvGen,0), tFeed = rawData.reduce((s,d)=>s+d.feed,0);
         let price = parseFloat(document.getElementById('inpPrice').value)/100 || DEFAULT_PREIS;
         let base = parseFloat(document.getElementById('inpBase').value) || DEFAULT_GG;
-        const cost = tGrid * price + (data.length * base);
+        const cost = tGrid * price + (rawData.length * base);
         const feedMoney = tFeed * VERGUETUNG_PV;
 
         document.getElementById('txtPvTotal').innerText = tPv.toFixed(0) + " kWh";
@@ -191,36 +195,56 @@
         document.getElementById('txtFeedTotal').innerHTML = `${tFeed.toFixed(0)} kWh <span class="sub-val">(${feedMoney.toFixed(2)} €)</span>`;
         document.getElementById('txtSaldo').innerHTML = `${(cost - feedMoney).toFixed(2)} € <span class="sub-val">Netto</span>`;
         
-        const hData = data.filter(d => d.hasHeat);
+        const hData = rawData.filter(d => d.hasHeat);
         document.getElementById('txtJaz').innerText = hData.reduce((s,d)=>s+d.elec,0) > 0 ? (hData.reduce((s,d)=>s+d.heat,0)/hData.reduce((s,d)=>s+d.elec,0)).toFixed(2) : "-";
-        document.getElementById('txtWpTotal').innerText = data.reduce((s,d)=>s+d.elec,0).toFixed(0) + " kWh";
+        document.getElementById('txtWpTotal').innerText = rawData.reduce((s,d)=>s+d.elec,0).toFixed(0) + " kWh";
 
         Object.values(charts).forEach(c => { if(c) c.destroy(); });
         const opt = { responsive: true, maintainAspectRatio: false };
         
         charts.main = new Chart(document.getElementById('chartMain'), {
             type: 'bar', data: { labels: activeKeys, datasets: [
-                { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), backgroundColor: '#f1c40f', stack: '0' },
-                { label: 'Einspeisung', data: data.map(d=>d.feed), backgroundColor: '#e67e22', stack: '1' },
-                { label: 'Haus (Eigen)', data: data.map(d=>d.houseEigen), backgroundColor: '#2ecc71', stack: '2' },
-                { label: 'WP (Eigen)', data: data.map(d=>d.wpEigen), backgroundColor: '#9b59b6', stack: '2' },
-                { label: 'Netzbezug', data: data.map(d=>d.grid), backgroundColor: '#e74c3c', stack: '3' }
+                { label: 'PV Erzeugung', data: rawData.map(d=>d.pvGen), backgroundColor: '#f1c40f', stack: '0' },
+                { label: 'Einspeisung', data: rawData.map(d=>d.feed), backgroundColor: '#e67e22', stack: '1' },
+                { label: 'Haus (Eigen)', data: rawData.map(d=>d.houseEigen), backgroundColor: '#2ecc71', stack: '2' },
+                { label: 'WP (Eigen)', data: rawData.map(d=>d.wpEigen), backgroundColor: '#9b59b6', stack: '2' },
+                { label: 'Netzbezug', data: rawData.map(d=>d.grid), backgroundColor: '#e74c3c', stack: '3' }
             ]}, options: opt 
         });
 
-        charts.lines = new Chart(document.getElementById('chartLines'), { type: 'line', data: { labels: activeKeys, datasets: [ { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), borderColor: '#f1c40f' }, { label: 'Gesamtbedarf', data: data.map(d=>d.grid+d.self), borderColor: '#2c3e50', borderDash: [5, 5] }, { label: 'WP Strom', data: data.map(d=>d.elec), borderColor: '#9b59b6' } ]}, options: opt });
+        charts.lines = new Chart(document.getElementById('chartLines'), { type: 'line', data: { labels: activeKeys, datasets: [ { label: 'PV Erzeugung', data: rawData.map(d=>d.pvGen), borderColor: '#f1c40f' }, { label: 'Gesamtbedarf', data: rawData.map(d=>d.grid+d.self), borderColor: '#2c3e50', borderDash: [5, 5] }, { label: 'WP Strom', data: rawData.map(d=>d.elec), borderColor: '#9b59b6' } ]}, options: opt });
 
         charts.aut = new Chart(document.getElementById('chartAutarky'), { 
-            type: 'line', data: { labels: activeKeys, 
-            datasets: [ 
-                { label: 'Autarkie (%)', data: data.map(d=>((d.self/(d.grid+d.self))*100).toFixed(1)), borderColor: '#2ecc71', borderWidth: 3, pointRadius: 4, clip: false }, 
-                { label: 'PV Nutzung (%)', data: data.map(d=>(d.pvGen>0?(d.self/d.pvGen*100):0).toFixed(1)), borderColor: '#2980b9', borderWidth: 3, pointRadius: 4, clip: false } 
-            ]}, 
-            options: { ...opt, layout: { padding: { top: 15 } }, scales: { y: { beginAtZero: true, max: 110, ticks: { stepSize: 20, callback: v => v <= 100 ? v+'%' : '' } } } } 
+            type: 'line', 
+            plugins: [ChartDataLabels],
+            data: { 
+                labels: activeKeys, 
+                datasets: [ 
+                    { 
+                        label: 'Autarkie (%)', 
+                        data: rawData.map(d=>d.autarky.toFixed(1)), 
+                        borderColor: '#2ecc71', borderWidth: 3, pointRadius: 4, clip: false,
+                        datalabels: { align: 'top', color: '#27ae60', font: { weight: 'bold', size: 10 }, backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 3 }
+                    }, 
+                    { 
+                        label: 'PV Nutzung (%)', 
+                        data: rawData.map(d=>Math.min(100, d.usage).toFixed(1)), // Grafik-Cap bei 100
+                        borderColor: '#2980b9', borderWidth: 3, pointRadius: 4, clip: false,
+                        datalabels: { 
+                            align: 'bottom', color: '#2980b9', font: { weight: 'bold', size: 10 }, 
+                            backgroundColor: 'rgba(255,255,255,0.7)', borderRadius: 3,
+                            formatter: (v, ctx) => rawData[ctx.dataIndex].usage.toFixed(1) + '%' // Echter Wert im Label
+                        }
+                    } 
+                ]
+            }, 
+            options: { ...opt, layout: { padding: { top: 35, bottom: 10 } }, 
+            plugins: { datalabels: { display: true }, legend: { display: true } },
+            scales: { y: { beginAtZero: true, max: 115, ticks: { stepSize: 20, callback: v => v <= 100 ? v+'%' : '' } } } } 
         });
 
-        charts.eff = new Chart(document.getElementById('chartEff'), { type: 'line', data: { labels: activeKeys, datasets: [{ label: 'JAZ', data: data.map(d=>d.hasHeat && d.elec>0 ? (d.heat/d.elec).toFixed(2) : null), borderColor: '#e67e22' }] }, options: opt });
-        charts.temp = new Chart(document.getElementById('chartTemp'), { type: 'bar', data: { labels: activeKeys, datasets: [ { label: 'Außen', data: data.map(d=>d.tAussen), backgroundColor: '#3498db' }, { label: 'Vorlauf', data: data.map(d=>d.tVorlauf), backgroundColor: '#e74c3c' } ]}, options: opt });
+        charts.eff = new Chart(document.getElementById('chartEff'), { type: 'line', data: { labels: activeKeys, datasets: [{ label: 'JAZ', data: rawData.map(d=>d.hasHeat && d.elec>0 ? (d.heat/d.elec).toFixed(2) : null), borderColor: '#e67e22' }] }, options: opt });
+        charts.temp = new Chart(document.getElementById('chartTemp'), { type: 'bar', data: { labels: activeKeys, datasets: [ { label: 'Außen', data: rawData.map(d=>d.tAussen), backgroundColor: '#3498db' }, { label: 'Vorlauf', data: rawData.map(d=>d.tVorlauf), backgroundColor: '#e74c3c' } ]}, options: opt });
     }
 
     document.getElementById('fileInput').onchange = e => {

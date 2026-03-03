@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Finale Detailansicht</title>
+    <title>Energie-Monitor - Fix</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -26,14 +26,14 @@
         .stat-card p { margin: 8px 0 0; font-size: 1.05em; font-weight: bold; line-height: 1.2; }
         .sub-val { display: block; font-size: 0.75em; color: #7f8c8d; font-weight: normal; margin-top: 4px; }
         .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .main-chart-container { height: 550px; position: relative; }
+        .main-chart-container { height: 500px; position: relative; }
         .upload-area { background: #fff; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px; border: 3px dashed #3498db; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1 style="text-align:center">📊 Energie-Monitor & Wärmepumpe</h1>
+    <h1 style="text-align:center">📊 Energie- & Kosten-Analyse</h1>
     
     <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
@@ -63,7 +63,7 @@
     </div>
 
     <div class="chart-card">
-        <h2>Detaillierte Monatsbilanz (kWh)</h2>
+        <h2>Energiefluss-Details (kWh)</h2>
         <div class="main-chart-container"><canvas id="chartMain"></canvas></div>
     </div>
 </div>
@@ -125,9 +125,11 @@
     function initDashboard() {
         const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         if (keys.length === 0) return;
+        
         const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
         const tabBar = document.getElementById('tabBar');
         tabBar.innerHTML = '';
+        
         const createBtn = (label, mode, yr = '') => {
             const btn = document.createElement('button');
             btn.innerText = label;
@@ -138,18 +140,6 @@
         createBtn('Gesamt', 'All');
         years.forEach(y => createBtn(y, 'Year', y));
         
-        const startSel = document.getElementById('selectStart'), endSel = document.getElementById('selectEnd');
-        startSel.innerHTML = endSel.innerHTML = '';
-        keys.forEach(k => { startSel.add(new Option(k, k)); endSel.add(new Option(k, k)); });
-        endSel.selectedIndex = keys.length - 1;
-
-        [startSel, endSel, document.getElementById('inpPrice'), document.getElementById('inpBase')].forEach(el => {
-            el.oninput = () => {
-                if(el.id === 'inpPrice') localStorage.setItem('cfg_p', el.value);
-                if(el.id === 'inpBase') localStorage.setItem('cfg_b', el.value);
-                render();
-            };
-        });
         render();
     }
 
@@ -162,76 +152,74 @@
 
     function render() {
         let keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
-        let priceToUse = parseFloat(document.getElementById('inpPrice').value) / 100 || DEFAULT_PREIS;
-        let baseToUse = parseFloat(document.getElementById('inpBase').value) || DEFAULT_GG;
-
         if (currentMode === 'Year') keys = keys.filter(k => k.startsWith(selectedYear));
+
+        const priceToUse = parseFloat(document.getElementById('inpPrice').value) / 100 || DEFAULT_PREIS;
+        const baseToUse = parseFloat(document.getElementById('inpBase').value) || DEFAULT_GG;
 
         const data = keys.map(m => {
             const wp = wpStore[m] || {elec:0, heat:0, hasHeat:false};
             const s = sunStore[m] || {p2g:0, p2b:0, p2s:0, b2g:0, b2s:0, g2s:0, g2b:0};
-            const pvGen = s.p2g + s.p2b + s.p2s;
-            const selfUsed = s.p2s + s.b2s;
-            const gridTotal = s.g2s + s.g2b;
-            const feedTotal = s.p2g + s.b2g;
-            const totalNeed = selfUsed + s.g2s;
-            return { m, pvGen, selfUsed, gridTotal, feedTotal, totalNeed, ...wp, ...s,
-                     autarky: totalNeed > 0 ? (selfUsed / totalNeed * 100) : 0, 
-                     usage: pvGen > 0 ? (selfUsed / pvGen * 100) : 0 };
+            return {
+                m,
+                pvGen: s.p2g + s.p2b + s.p2s,
+                selfUsed: s.p2s + s.b2s,
+                gridTotal: s.g2s + s.g2b,
+                feedTotal: s.p2g + s.b2g,
+                totalNeed: s.p2s + s.b2s + s.g2s, // Was das Haus + Akku wirklich verbraucht haben
+                ...wp, ...s
+            };
         });
 
-        // Stats Update
-        const tGrid = data.reduce((sum,d)=>sum+d.gridTotal,0);
-        const tFeed = data.reduce((sum,d)=>sum+d.feedTotal,0);
-        const gridCostTotal = tGrid * priceToUse + (keys.length * baseToUse);
-        const feedMoney = tFeed * VERGUETUNG_PV;
+        // Summen für Stats
+        const sumPv = data.reduce((a,b)=>a+b.pvGen,0);
+        const sumSelf = data.reduce((a,b)=>a+b.selfUsed,0);
+        const sumGrid = data.reduce((a,b)=>a+b.gridTotal,0);
+        const sumFeed = data.reduce((a,b)=>a+b.feedTotal,0);
+        const sumWp = data.reduce((a,b)=>a+b.elec,0);
+        const sumHeat = data.reduce((a,b)=>a+b.heat,0);
+        const sumNeed = data.reduce((a,b)=>a+b.totalNeed,0);
 
-        document.getElementById('txtPvTotal').innerText = data.reduce((sum,d)=>sum+d.pvGen,0).toFixed(0) + " kWh";
-        document.getElementById('txtPvSelfTotal').innerText = data.reduce((sum,d)=>sum+d.selfUsed,0).toFixed(0) + " kWh";
-        document.getElementById('txtWpTotal').innerText = data.reduce((sum,d)=>sum+d.elec,0).toFixed(0)+" kWh";
-        document.getElementById('txtGridTotal').innerHTML = `${tGrid.toFixed(0)} kWh <span class="sub-val">(${gridCostTotal.toFixed(2)} €)</span>`;
-        document.getElementById('txtFeedTotal').innerHTML = `${tFeed.toFixed(0)} kWh <span class="sub-val">(${feedMoney.toFixed(2)} €)</span>`;
-        document.getElementById('txtSaldo').innerHTML = `${(gridCostTotal - feedMoney).toFixed(2)} € <span class="sub-val">Netto</span>`;
-        document.getElementById('txtAutarky').innerText = data.reduce((sum,d)=>sum+d.totalNeed,0) > 0 ? (data.reduce((sum,d)=>sum+d.selfUsed,0)/data.reduce((sum,d)=>sum+d.totalNeed,0)*100).toFixed(1)+"%" : "-";
-        document.getElementById('txtPvUsagePct').innerText = data.reduce((sum,d)=>sum+d.pvGen,0) > 0 ? (data.reduce((sum,d)=>sum+d.selfUsed,0)/data.reduce((sum,d)=>sum+d.pvGen,0)*100).toFixed(1)+"%" : "-";
-        
-        const activeJaz = data.filter(d => d.hasHeat);
-        document.getElementById('txtJaz').innerText = activeJaz.reduce((sum,d)=>sum+d.elec,0) > 0 ? (activeJaz.reduce((sum,d)=>sum+d.heat,0)/activeJaz.reduce((sum,d)=>sum+d.elec,0)).toFixed(2) : "-";
+        const gridCost = sumGrid * priceToUse + (keys.length * baseToUse);
+        const feedMoney = sumFeed * VERGUETUNG_PV;
 
+        // Anzeige Stats
+        document.getElementById('txtPvTotal').innerText = sumPv.toFixed(0) + " kWh";
+        document.getElementById('txtPvSelfTotal').innerText = sumSelf.toFixed(0) + " kWh";
+        document.getElementById('txtWpTotal').innerText = sumWp.toFixed(0) + " kWh";
+        document.getElementById('txtGridTotal').innerHTML = `${sumGrid.toFixed(0)} kWh <span class="sub-val">(${gridCost.toFixed(2)} €)</span>`;
+        document.getElementById('txtFeedTotal').innerHTML = `${sumFeed.toFixed(0)} kWh <span class="sub-val">(${feedMoney.toFixed(2)} €)</span>`;
+        document.getElementById('txtSaldo').innerHTML = `${(gridCost - feedMoney).toFixed(2)} € <span class="sub-val">Netto</span>`;
+        document.getElementById('txtAutarky').innerText = sumNeed > 0 ? (sumSelf/sumNeed*100).toFixed(1)+"%" : "-";
+        document.getElementById('txtPvUsagePct').innerText = sumPv > 0 ? (sumSelf/sumPv*100).toFixed(1)+"%" : "-";
+        document.getElementById('txtJaz').innerText = sumWp > 0 ? (sumHeat/sumWp).toFixed(2) : "-";
+
+        // Chart
         Object.values(charts).forEach(c => { if(c) c.destroy(); });
-
         charts.main = new Chart(document.getElementById('chartMain'), {
-            type: 'bar', 
-            data: { 
-                labels: keys, 
+            type: 'bar',
+            data: {
+                labels: keys,
                 datasets: [
-                    // SÄULE 1: PV ERZEUGUNG (Stack 0)
                     { label: 'PV -> Netz', data: data.map(d=>d.p2g), backgroundColor: 'var(--pv-grid)', stack: '0' },
                     { label: 'PV -> Batterie', data: data.map(d=>d.p2b), backgroundColor: 'var(--pv-batt)', stack: '0' },
                     { label: 'PV -> Haus', data: data.map(d=>d.p2s), backgroundColor: 'var(--pv-direct)', stack: '0' },
-                    // SÄULE 2: EINSPEISUNG (Stack 1)
+                    
                     { label: 'Einspeisung (PV)', data: data.map(d=>d.p2g), backgroundColor: 'rgba(230, 126, 34, 0.4)', stack: '1' },
                     { label: 'Einspeisung (Akku)', data: data.map(d=>d.b2g), backgroundColor: 'var(--batt-grid)', stack: '1' },
-                    // SÄULE 3: HAUSVERBRAUCH (Stack 2)
+                    
                     { label: 'Haus (PV)', data: data.map(d=>d.p2s), backgroundColor: 'var(--pv-site)', stack: '2' },
                     { label: 'Haus (Akku)', data: data.map(d=>d.b2s), backgroundColor: 'var(--batt-site)', stack: '2' },
                     { label: 'Haus (Netz)', data: data.map(d=>d.g2s), backgroundColor: 'var(--grid-site)', stack: '2' },
-                    // SÄULE 4: WÄRMEPUMPE (Stack 3)
+                    
                     { label: 'Wärmepumpe', data: data.map(d=>d.elec), backgroundColor: 'var(--wp)', stack: '3' }
                 ]
-            }, 
-            options: { 
-                responsive: true, 
-                maintainAspectRatio: false, 
-                plugins: {
-                    legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 11 } } },
-                    tooltip: { mode: 'index', intersect: false }
-                },
-                scales: { 
-                    x: { stacked: false }, // Wichtig: false, damit die Stacks nebeneinander stehen
-                    y: { stacked: true, title: { display: true, text: 'kWh' } } 
-                }
-            } 
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                scales: { x: { stacked: false }, y: { stacked: true } },
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } } }
+            }
         });
     }
 
@@ -246,6 +234,13 @@
             reader.readAsText(file);
         });
     };
+
+    [document.getElementById('inpPrice'), document.getElementById('inpBase')].forEach(el => {
+        el.oninput = () => {
+            localStorage.setItem(el.id === 'inpPrice' ? 'cfg_p' : 'cfg_b', el.value);
+            render();
+        };
+    });
 </script>
 </body>
 </html>

@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor Pro - 4-Balken-System</title>
+    <title>Energie-Monitor Pro - Clean Version</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -24,13 +24,13 @@
 
 <div class="container">
     <h1 style="text-align:center">📊 Energie-Analyse Pro</h1>
-    <div id="statusLine" style="text-align:center; color:#3498db; margin-bottom:15px;">Lade GitHub Daten...</div>
+    <div id="statusLine" style="text-align:center; color:#3498db; margin-bottom:15px;">Daten-Sync aktiv...</div>
 
     <div id="tabBar" class="tabs"></div>
 
     <div class="stats-grid">
         <div class="stat-card" style="border-color: var(--house)"><h3>Autarkie</h3><p id="txtAutarky">-</p></div>
-        <div class="stat-card" style="border-color: var(--feedin)"><h3>JAZ (Ø)</h3><p id="txtJaz">-</p></div>
+        <div class="stat-card" style="border-color: var(--feedin)"><h3>JAZ</h3><p id="txtJaz">-</p></div>
         <div class="stat-card" style="border-color: var(--pv)"><h3>PV Ertrag</h3><p id="txtPvTotal">-</p></div>
         <div class="stat-card" style="border-color: var(--grid)"><h3>Netzbezug</h3><p id="txtGridTotal">-</p></div>
     </div>
@@ -41,7 +41,7 @@
     </div>
 
     <div class="chart-card">
-        <h2>Energieflüsse pro Monat (4-Balken-System)</h2>
+        <h2>Energieflüsse pro Monat</h2>
         <div style="height:450px"><canvas id="chartMain"></canvas></div>
     </div>
 </div>
@@ -56,7 +56,7 @@
             try {
                 const res = await fetch(file + '?t=' + Date.now());
                 if (res.ok) processData(await res.text(), file);
-            } catch(e) {}
+            } catch(e) { console.log("Ladefehler", file); }
         }
     }
 
@@ -73,7 +73,7 @@
         } else {
             wpStore = parseWp(text); localStorage.setItem('wpStore', JSON.stringify(wpStore));
         }
-        document.getElementById('statusLine').innerText = "Daten synchronisiert";
+        document.getElementById('statusLine').innerText = "Daten von GitHub geladen";
         initDashboard();
     }
 
@@ -85,7 +85,8 @@
         rows.forEach(r => {
             if (r[0]?.toLowerCase() === "monat") {
                 let k = r[1]; if(k.includes(".")) { const p = k.split("."); k = `${p[2]}-${p[1].padStart(2,'0')}`; }
-                res[k] = { elec: cleanNum(r[12]) + cleanNum(r[17]), heat: cleanNum(r[7]) + cleanNum(r[12]) };
+                const e = cleanNum(r[12]) + cleanNum(r[17]), h = cleanNum(r[7]) + cleanNum(r[12]);
+                if(e > 0 || h > 0) res[k] = { elec: e, heat: h };
             }
         });
         return res;
@@ -97,7 +98,7 @@
         rows.forEach(r => {
             const t = (r.Time || r.time || "").substring(0, 7); if(!t) return;
             if(!res[t]) res[t] = { grid: 0, self: 0, feed: 0 };
-            res[t].grid += parseFloat(row.GridToSite) || parseFloat(r.GridToSite) || 0;
+            res[t].grid += parseFloat(r.GridToSite) || 0;
             res[t].self += (parseFloat(r.PvToSite) || 0) + (parseFloat(r.BatteryToSite) || 0);
             res[t].feed += (parseFloat(r.PvToGrid) || 0) + (parseFloat(r.BatteryToGrid) || 0);
         });
@@ -105,7 +106,12 @@
     }
 
     function initDashboard() {
-        const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
+        const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)]))
+                          .filter(k => {
+                              const s = sunStore[k], w = wpStore[k];
+                              return (s && (s.self + s.feed > 0)) || (w && w.elec > 0);
+                          }).sort();
+        
         const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
         const tb = document.getElementById('tabBar'); tb.innerHTML = '';
         const addBtn = (l, m, y='') => {
@@ -141,11 +147,11 @@
             data: {
                 labels: keys,
                 datasets: [
-                    { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), backgroundColor: '#f1c40f', stack: 'Balken1' },
-                    { label: 'Einspeisung', data: data.map(d=>d.feed), backgroundColor: '#e67e22', stack: 'Balken2' },
-                    { label: 'Eigennutzung Haus', data: data.map(d=>d.housePure), backgroundColor: '#2ecc71', stack: 'Balken3' },
-                    { label: 'Netzbezug', data: data.map(d=>d.grid), backgroundColor: '#e74c3c', stack: 'Balken3' },
-                    { label: 'WP Strom', data: data.map(d=>d.elec), backgroundColor: '#9b59b6', stack: 'Balken4' }
+                    { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), backgroundColor: '#f1c40f', stack: 'B1' },
+                    { label: 'Einspeisung', data: data.map(d=>d.feed), backgroundColor: '#e67e22', stack: 'B2' },
+                    { label: 'Eigennutzung Haus', data: data.map(d=>d.housePure), backgroundColor: '#2ecc71', stack: 'B3' },
+                    { label: 'Netzbezug', data: data.map(d=>d.grid), backgroundColor: '#e74c3c', stack: 'B3' },
+                    { label: 'WP Strom', data: data.map(d=>d.elec), backgroundColor: '#9b59b6', stack: 'B4' }
                 ]
             },
             options: { ...o, scales: { x: { stacked: false }, y: { stacked: true } } }

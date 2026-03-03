@@ -2,51 +2,65 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor Pro - Final</title>
+    <title>Energie-Monitor Pro - Full Filter Fix</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --bg: #f4f7f6; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
         .container { max-width: 1400px; margin: auto; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
-        .tab-btn { padding: 10px 20px; border-radius: 8px; border: none; background: #ddd; cursor: pointer; font-weight: bold; }
-        .tab-btn.active { background: #3498db; color: white; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }
+        .tab-btn { padding: 10px 20px; border-radius: 8px; border: none; background: #ddd; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .tab-btn.active { background: #3498db; color: white; box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3); }
+        
+        .range-picker { 
+            background: #fff; padding: 15px; border-radius: 12px; margin-bottom: 20px; 
+            display: none; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #e0e0e0;
+        }
+        .range-picker.visible { display: flex; }
+        
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
         .stat-card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; border-bottom: 4px solid #ddd; }
         .stat-card h3 { font-size: 0.7em; text-transform: uppercase; color: #7f8c8d; margin: 0; }
-        .stat-card p { margin: 5px 0 0; font-size: 1.2em; font-weight: bold; }
+        .stat-card p { margin: 5px 0 0; font-size: 1.1em; font-weight: bold; }
+        
         .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); margin-bottom: 20px; height: 450px; }
         .upload-area { background: #fff; padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 20px; border: 2px dashed #3498db; }
-        .controls { background: #fff; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: center; gap: 20px; font-size: 0.9em; }
-        input { width: 70px; padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
+        .controls { background: #fff; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; font-size: 0.9em; }
+        input, select { padding: 5px; border-radius: 4px; border: 1px solid #ccc; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1 style="text-align:center">☀️ Solar- & Wärmepumpen Analyse</h1>
+    <h1 style="text-align:center">☀️ Energie-Analyse & Zeitfilter</h1>
     
     <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <p id="statusLine" style="margin: 5px 0 0; font-size: 0.9em; color: #3498db;">Dateien solar.csv und wp.csv werden automatisch gesucht...</p>
+        <p id="statusLine" style="margin: 5px 0 0; font-size: 0.85em; color: #3498db;">Suche solar.csv und wp.csv...</p>
     </div>
 
     <div class="controls">
-        <div>Strompreis: <input type="number" id="inpPrice" step="0.01"> ct/kWh</div>
-        <div>Grundgebühr: <input type="number" id="inpBase" step="0.01"> €/Monat</div>
+        <div>Preis: <input type="number" id="inpPrice" step="0.01"> ct</div>
+        <div>Grundgebühr: <input type="number" id="inpBase" step="0.01"> €</div>
     </div>
 
     <div id="tabBar" class="tabs"></div>
 
+    <div id="rangeSelector" class="range-picker">
+        Von: <select id="selectStart"></select>
+        Bis: <select id="selectEnd"></select>
+    </div>
+
     <div class="stats-grid">
         <div class="stat-card" style="border-color: var(--house)"><h3>Autarkie</h3><p id="txtAutarky">-</p></div>
-        <div class="stat-card" style="border-color: var(--pv)"><h3>PV Erzeugung</h3><p id="txtPvTotal">-</p></div>
-        <div class="stat-card" style="border-color: var(--house)"><h3>Eigenverbrauch</h3><p id="txtSelf">-</p></div>
+        <div class="stat-card" style="border-color: var(--pv)"><h3>Erzeugung</h3><p id="txtPvTotal">-</p></div>
+        <div class="stat-card" style="border-color: var(--house)"><h3>Eigenbedarf</h3><p id="txtSelf">-</p></div>
         <div class="stat-card" style="border-color: var(--grid)"><h3>Netzbezug</h3><p id="txtGrid">-</p></div>
         <div class="stat-card" style="border-color: var(--feedin)"><h3>Einspeisung</h3><p id="txtFeed">-</p></div>
         <div class="stat-card" style="border-color: var(--wp)"><h3>WP Strom</h3><p id="txtWp">-</p></div>
-        <div class="stat-card" style="border-color: var(--feedin)"><h3>JAZ Ø</h3><p id="txtJaz">-</p></div>
+        <div class="stat-card" style="border-color: #e67e22"><h3>JAZ Ø</h3><p id="txtJaz">-</p></div>
         <div class="stat-card" style="border-color: #2c3e50"><h3>Saldo</h3><p id="txtSaldo">-</p></div>
     </div>
 
@@ -60,11 +74,9 @@
     let currentMode = 'All', selectedYear = '';
 
     window.onload = () => {
-        // LocalStorage & Defaults
         document.getElementById('inpPrice').value = localStorage.getItem('energy_price') || "28.00";
         document.getElementById('inpBase').value = localStorage.getItem('energy_base') || "10.83";
 
-        // Auto-Load
         Promise.all([
             fetch('solar.csv').then(r => r.ok ? r.text() : null).catch(() => null),
             fetch('wp.csv').then(r => r.ok ? r.text() : null).catch(() => null)
@@ -123,12 +135,26 @@
             const btn = document.createElement('button');
             btn.innerText = label;
             btn.className = 'tab-btn' + (currentMode === mode && selectedYear === yr ? ' active' : '');
-            btn.onclick = () => { currentMode = mode; selectedYear = yr; updateUI(); };
+            btn.onclick = () => { 
+                currentMode = mode; 
+                selectedYear = yr; 
+                document.getElementById('rangeSelector').classList.toggle('visible', mode === 'Custom');
+                updateUI(); 
+            };
             tabBar.appendChild(btn);
         };
 
         addTab('Gesamt', 'All');
         years.forEach(y => addTab(y, 'Year', y));
+        addTab('Benutzerdefiniert', 'Custom');
+
+        // Fill Selects
+        const sS = document.getElementById('selectStart'), sE = document.getElementById('selectEnd');
+        if(sS.options.length === 0) {
+            keys.forEach(k => { sS.add(new Option(k, k)); sE.add(new Option(k, k)); });
+            sE.selectedIndex = keys.length - 1;
+            sS.onchange = sE.onchange = () => render(keys);
+        }
 
         render(keys);
     }
@@ -136,6 +162,11 @@
     function render(allKeys) {
         let keys = allKeys;
         if(currentMode === 'Year') keys = keys.filter(k => k.startsWith(selectedYear));
+        if(currentMode === 'Custom') {
+            const start = document.getElementById('selectStart').value;
+            const end = document.getElementById('selectEnd').value;
+            keys = allKeys.filter(k => k >= start && k <= end);
+        }
 
         const price = parseFloat(document.getElementById('inpPrice').value)/100 || 0.28;
         const base = parseFloat(document.getElementById('inpBase').value) || 10.83;
@@ -197,8 +228,8 @@
         });
     };
     
-    document.getElementById('inpPrice').oninput = updateUI;
-    document.getElementById('inpBase').oninput = updateUI;
+    document.getElementById('inpPrice').oninput = () => updateUI();
+    document.getElementById('inpBase').oninput = () => updateUI();
 </script>
 </body>
 </html>

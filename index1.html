@@ -89,7 +89,6 @@
     let currentMode = 'All', selectedYear = '';
 
     window.onload = () => {
-        // Preise aus LocalStorage laden oder Defaults nutzen
         const savedPrice = localStorage.getItem('cfg_price');
         const savedBase = localStorage.getItem('cfg_base');
         document.getElementById('inpPrice').value = savedPrice ? savedPrice : (DEFAULT_PREIS * 100).toFixed(2);
@@ -129,21 +128,21 @@
         rows.forEach(row => {
             const time = row.Time || row.time || "";
             if (time.length < 7) return;
-            const key = time.substring(0, 7); // Holt YYYY-MM
-            if (!monthly[key]) monthly[key] = { grid: 0, self: 0, feed: 0, pvOnly: 0 };
+            const key = time.substring(0, 7);
             
-            const g2s = parseFloat(row.GridToSite) || 0;
-            const g2b = parseFloat(row.GridToBattery) || 0;
-            const p2s = parseFloat(row.PvToSite) || 0;
-            const b2s = parseFloat(row.BatteryToSite) || 0;
-            const p2g = parseFloat(row.PvToGrid) || 0;
-            const b2g = parseFloat(row.BatteryToGrid) || 0;
+            // Nur Zeilen mit tatsächlichen Werten verarbeiten
+            const g2s = parseFloat(row.GridToSite) || 0, g2b = parseFloat(row.GridToBattery) || 0;
+            const p2s = parseFloat(row.PvToSite) || 0, b2s = parseFloat(row.BatteryToSite) || 0;
+            const p2g = parseFloat(row.PvToGrid) || 0, b2g = parseFloat(row.BatteryToGrid) || 0;
             const p2b = parseFloat(row.PvToBattery) || 0;
 
+            if (g2s+g2b+p2s+b2s+p2g+b2g+p2b === 0) return;
+
+            if (!monthly[key]) monthly[key] = { grid: 0, self: 0, feed: 0, pvOnly: 0 };
             monthly[key].grid += (g2s + g2b);
             monthly[key].self += (p2s + b2s);
-            monthly[key].feed += (p2g + b2g); // Addiert beide für Februar-Fix
-            monthly[key].pvOnly += (p2s + p2g + p2b); // Gesamte PV Erzeugung
+            monthly[key].feed += (p2g + b2g); 
+            monthly[key].pvOnly += (p2s + p2g + p2b);
         });
         return monthly;
     }
@@ -155,8 +154,10 @@
     }
 
     function initDashboard() {
+        // Nur Schlüssel nehmen, die auch Daten enthalten
         const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         if (keys.length === 0) return;
+        
         const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
         const tabBar = document.getElementById('tabBar');
         tabBar.innerHTML = '';
@@ -184,7 +185,6 @@
 
         [startSel, endSel, document.getElementById('inpPrice'), document.getElementById('inpBase')].forEach(el => {
             el.oninput = () => {
-                // Preise speichern
                 if(el.id === 'inpPrice') localStorage.setItem('cfg_price', el.value);
                 if(el.id === 'inpBase') localStorage.setItem('cfg_base', el.value);
                 render();

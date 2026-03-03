@@ -2,212 +2,153 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor Pro - Finale Version</title>
+    <title>Energie-Monitor Pro - 4-Balken-System</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
-        :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --usage: #2980b9; --bg: #f4f7f6; }
+        :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --bg: #f4f7f6; }
         body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
-        .container { max-width: 1600px; margin: auto; }
+        .container { max-width: 1400px; margin: auto; }
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
-        .tab-btn { padding: 10px 20px; border-radius: 8px; border: none; background: #ddd; cursor: pointer; font-weight: bold; transition: 0.3s; }
-        .tab-btn.active { background: #3498db; color: white; box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3); }
-        .status-bar { text-align: center; font-size: 0.9em; margin-bottom: 15px; color: #3498db; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 25px; }
-        .stat-card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.05); text-align: center; border-bottom: 4px solid #ddd; }
-        .stat-card h3 { font-size: 0.7em; text-transform: uppercase; color: #7f8c8d; margin: 0; }
-        .stat-card p { margin: 8px 0 0; font-size: 1.1em; font-weight: bold; }
+        .tab-btn { padding: 10px 20px; border-radius: 8px; border: none; background: #ddd; cursor: pointer; font-weight: bold; }
+        .tab-btn.active { background: #3498db; color: white; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; border-bottom: 4px solid #ddd; }
+        .stat-card p { margin: 5px 0 0; font-size: 1.2em; font-weight: bold; }
+        .donut-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
         .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); margin-bottom: 20px; }
-        .donut-section { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-        .side-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        h2 { font-size: 1.1em; margin-top: 0; color: #34495e; border-left: 4px solid #3498db; padding-left: 10px; }
-        @media (max-width: 900px) { .donut-section, .side-charts { grid-template-columns: 1fr; } }
+        h2 { font-size: 1.1em; margin-bottom: 15px; color: #34495e; border-left: 4px solid #3498db; padding-left: 10px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1 style="text-align:center">📊 Energie-Monitor Live</h1>
-    <div id="statusLine" class="status-bar">Initialisiere...</div>
+    <h1 style="text-align:center">📊 Energie-Analyse Pro</h1>
+    <div id="statusLine" style="text-align:center; color:#3498db; margin-bottom:15px;">Lade GitHub Daten...</div>
 
     <div id="tabBar" class="tabs"></div>
 
     <div class="stats-grid">
         <div class="stat-card" style="border-color: var(--house)"><h3>Autarkie</h3><p id="txtAutarky">-</p></div>
         <div class="stat-card" style="border-color: var(--feedin)"><h3>JAZ (Ø)</h3><p id="txtJaz">-</p></div>
-        <div class="stat-card" style="border-color: var(--pv)"><h3>PV Erzeugung</h3><p id="txtPvTotal">-</p></div>
+        <div class="stat-card" style="border-color: var(--pv)"><h3>PV Ertrag</h3><p id="txtPvTotal">-</p></div>
         <div class="stat-card" style="border-color: var(--grid)"><h3>Netzbezug</h3><p id="txtGridTotal">-</p></div>
-        <div class="stat-card" style="border-color: var(--saldo)"><h3>Saldo (€)</h3><p id="txtSaldo">-</p></div>
     </div>
 
-    <div class="donut-section">
-        <div class="chart-card">
-            <h2>Haus-Quellen</h2>
-            <div style="height:220px"><canvas id="donutSources"></canvas></div>
-        </div>
-        <div class="chart-card">
-            <h2>PV-Nutzung</h2>
-            <div style="height:220px"><canvas id="donutUsage"></canvas></div>
-        </div>
+    <div class="donut-row">
+        <div class="chart-card"><h2>Energiequellen Haus</h2><div style="height:200px"><canvas id="donutSources"></canvas></div></div>
+        <div class="chart-card"><h2>PV Nutzung</h2><div style="height:200px"><canvas id="donutUsage"></canvas></div></div>
     </div>
 
     <div class="chart-card">
-        <h2>Energiebilanz (Erzeugung vs. Verbrauch)</h2>
-        <div style="height:400px"><canvas id="chartMain"></canvas></div>
-    </div>
-    
-    <div class="side-charts">
-        <div class="chart-card"><h2>Effizienz (JAZ)</h2><div style="height:250px"><canvas id="chartEff"></canvas></div></div>
-        <div class="chart-card"><h2>Temperaturen (°C)</h2><div style="height:250px"><canvas id="chartTemp"></canvas></div></div>
+        <h2>Energieflüsse pro Monat (4-Balken-System)</h2>
+        <div style="height:450px"><canvas id="chartMain"></canvas></div>
     </div>
 </div>
 
 <script>
-    const DEFAULT_PREIS = 0.293, DEFAULT_GG = 10.83, VERGUETUNG_PV = 0.0795;
+    const DEFAULT_PREIS = 0.293, VERGUETUNG = 0.0795;
     let sunStore = {}, wpStore = {}, charts = {}, currentMode = 'All', selectedYear = '';
 
-    async function loadDataFromServer() {
+    async function loadData() {
         const files = ['solar.csv', 'wp.csv'];
         for (const file of files) {
             try {
-                const response = await fetch(file + '?t=' + Date.now());
-                if (response.ok) {
-                    const text = await response.text();
-                    processData(text, file);
-                }
-            } catch (e) { console.error("Fetch Fehler:", file); }
+                const res = await fetch(file + '?t=' + Date.now());
+                if (res.ok) processData(await res.text(), file);
+            } catch(e) {}
         }
-        document.getElementById('statusLine').innerText = "Daten aktuell von GitHub Pages";
     }
 
     window.onload = () => {
-        const savedSun = localStorage.getItem('sunStore');
-        const savedWp = localStorage.getItem('wpStore');
-        if(savedSun) sunStore = JSON.parse(savedSun);
-        if(savedWp) wpStore = JSON.parse(savedWp);
-        if(savedSun || savedWp) initDashboard();
-        loadDataFromServer();
+        const sS = localStorage.getItem('sunStore'), sW = localStorage.getItem('wpStore');
+        if(sS) sunStore = JSON.parse(sS); if(sW) wpStore = JSON.parse(sW);
+        if(sS || sW) initDashboard();
+        loadData();
     };
 
     function processData(text, name) {
-        if (text.includes("PvToSite") || name.toLowerCase().includes("solar")) {
-            sunStore = parseSun(text);
-            localStorage.setItem('sunStore', JSON.stringify(sunStore));
+        if (text.includes("PvToSite") || name.includes("solar")) {
+            sunStore = parseSun(text); localStorage.setItem('sunStore', JSON.stringify(sunStore));
         } else {
-            wpStore = parseWp(text);
-            localStorage.setItem('wpStore', JSON.stringify(wpStore));
+            wpStore = parseWp(text); localStorage.setItem('wpStore', JSON.stringify(wpStore));
         }
+        document.getElementById('statusLine').innerText = "Daten synchronisiert";
         initDashboard();
     }
 
     function cleanNum(val) { return parseFloat(val?.toString().replace(/\./g, '').replace(',', '.')) || 0; }
 
-    function parseWp(csvText) {
-        const rows = Papa.parse(csvText.trim(), {delimiter: ";", skipEmptyLines: true}).data;
-        const monthly = {};
-        rows.forEach(row => {
-            if ((row[0]||"").toString().toLowerCase() === "monat") {
-                let key = row[1];
-                if (key.includes(".")) { const p = key.split("."); key = `${p[p.length-1]}-${p[p.length-2].padStart(2, '0')}`; }
-                const heatProd = cleanNum(row[7]), wpElec = cleanNum(row[12]), addElec = cleanNum(row[17]);
-                const tA = cleanNum(row[21]), tV = cleanNum(row[22]);
-                monthly[key] = { elec: (wpElec + addElec), heat: (heatProd + wpElec + addElec), tA: tA, tV: tV, hasHeat: heatProd > 0.5 };
+    function parseWp(csv) {
+        const rows = Papa.parse(csv.trim(), {delimiter: ";", skipEmptyLines: true}).data;
+        const res = {};
+        rows.forEach(r => {
+            if (r[0]?.toLowerCase() === "monat") {
+                let k = r[1]; if(k.includes(".")) { const p = k.split("."); k = `${p[2]}-${p[1].padStart(2,'0')}`; }
+                res[k] = { elec: cleanNum(r[12]) + cleanNum(r[17]), heat: cleanNum(r[7]) + cleanNum(r[12]) };
             }
         });
-        return monthly;
+        return res;
     }
 
-    function parseSun(csvText) {
-        const rows = Papa.parse(csvText, {header: true, skipEmptyLines: true}).data;
-        const monthly = {};
-        rows.forEach(row => {
-            const time = (row.Time || row.time || "").substring(0, 7);
-            if (!time) return;
-            if (!monthly[time]) monthly[time] = { grid: 0, self: 0, feed: 0 };
-            monthly[time].grid += parseFloat(row.GridToSite) || 0;
-            monthly[time].self += (parseFloat(row.PvToSite) || 0) + (parseFloat(row.BatteryToSite) || 0);
-            monthly[time].feed += (parseFloat(row.PvToGrid) || 0) + (parseFloat(row.BatteryToGrid) || 0);
+    function parseSun(csv) {
+        const rows = Papa.parse(csv, {header: true, skipEmptyLines: true}).data;
+        const res = {};
+        rows.forEach(r => {
+            const t = (r.Time || r.time || "").substring(0, 7); if(!t) return;
+            if(!res[t]) res[t] = { grid: 0, self: 0, feed: 0 };
+            res[t].grid += parseFloat(row.GridToSite) || parseFloat(r.GridToSite) || 0;
+            res[t].self += (parseFloat(r.PvToSite) || 0) + (parseFloat(r.BatteryToSite) || 0);
+            res[t].feed += (parseFloat(r.PvToGrid) || 0) + (parseFloat(r.BatteryToGrid) || 0);
         });
-        return monthly;
+        return res;
     }
 
     function initDashboard() {
         const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
-        const tabBar = document.getElementById('tabBar');
-        tabBar.innerHTML = '';
-        const createBtn = (label, mode, yr = '') => {
-            const btn = document.createElement('button');
-            btn.innerText = label;
-            btn.className = 'tab-btn' + (currentMode === mode && yr === selectedYear ? ' active' : '');
-            btn.onclick = () => { currentMode = mode; selectedYear = yr; initDashboard(); };
-            tabBar.appendChild(btn);
-        }
-        createBtn('Gesamt', 'All');
-        years.forEach(y => createBtn(y, 'Year', y));
-        render();
+        const tb = document.getElementById('tabBar'); tb.innerHTML = '';
+        const addBtn = (l, m, y='') => {
+            const b = document.createElement('button'); b.innerText = l; b.className = 'tab-btn'+(currentMode===m && selectedYear===y?' active':'');
+            b.onclick = () => { currentMode = m; selectedYear = y; initDashboard(); }; tb.appendChild(b);
+        };
+        addBtn('Gesamt', 'All'); years.forEach(y => addBtn(y, 'Year', y));
+        render(keys);
     }
 
-    function render() {
-        let keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
-        if (currentMode === 'Year') keys = keys.filter(k => k.startsWith(selectedYear));
-        
-        const data = keys.map(m => {
-            const wp = wpStore[m] || {elec:0, heat:0, tA:0, tV:0, hasHeat:false};
-            const sun = sunStore[m] || {grid:0, self:0, feed:0};
-            const pvGen = sun.self + sun.feed;
-            return { m, ...wp, ...sun, pvGen, housePure: Math.max(0, sun.self - wp.elec) };
+    function render(allKeys) {
+        let keys = currentMode === 'Year' ? allKeys.filter(k => k.startsWith(selectedYear)) : allKeys;
+        const data = keys.map(k => {
+            const s = sunStore[k] || {grid:0, self:0, feed:0}, w = wpStore[k] || {elec:0, heat:0};
+            return { k, ...s, ...w, pvGen: s.self + s.feed, housePure: Math.max(0, s.self - w.elec) };
         });
 
-        const tGrid = data.reduce((s,d)=>s+d.grid,0), tSelf = data.reduce((s,d)=>s+d.self,0), tPv = data.reduce((s,d)=>s+d.pvGen,0), tFeed = data.reduce((s,d)=>s+d.feed,0);
-        
-        document.getElementById('txtPvTotal').innerText = tPv.toFixed(0) + " kWh";
-        document.getElementById('txtAutarky').innerText = (tGrid+tSelf > 0) ? (tSelf/(tGrid+tSelf)*100).toFixed(1)+"%" : "-";
-        document.getElementById('txtGridTotal').innerText = tGrid.toFixed(0) + " kWh";
-        document.getElementById('txtSaldo').innerText = (tGrid*DEFAULT_PREIS + data.length*DEFAULT_GG - tFeed*VERGUETUNG_PV).toFixed(2) + " €";
-        const active = data.filter(d => d.hasHeat);
-        document.getElementById('txtJaz').innerText = active.length ? (active.reduce((s,d)=>s+d.heat,0)/active.reduce((s,d)=>s+d.elec,0)).toFixed(2) : "-";
+        const tG = data.reduce((a,b)=>a+b.grid,0), tS = data.reduce((a,b)=>a+b.self,0), tF = data.reduce((a,b)=>a+b.feed,0), tP = data.reduce((a,b)=>a+b.pvGen,0);
+        document.getElementById('txtAutarky').innerText = (tG+tS > 0 ? (tS/(tG+tS)*100).toFixed(1) : "-") + "%";
+        document.getElementById('txtPvTotal').innerText = tP.toFixed(0) + " kWh";
+        document.getElementById('txtGridTotal').innerText = tG.toFixed(0) + " kWh";
+        const wActive = data.filter(d => d.heat > 0);
+        document.getElementById('txtJaz').innerText = wActive.length ? (wActive.reduce((a,b)=>a+b.heat,0)/wActive.reduce((a,b)=>a+b.elec,0)).toFixed(2) : "-";
 
-        updateCharts(keys, data, tGrid, tSelf, tPv, tFeed);
-    }
-
-    function updateCharts(labels, data, tGrid, tSelf, tPv, tFeed) {
         Object.values(charts).forEach(c => c?.destroy());
-        const opt = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } };
+        const o = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } };
 
-        charts.donutSources = new Chart(document.getElementById('donutSources'), {
-            type: 'doughnut',
-            data: { labels: ['PV Eigenstrom', 'Netzbezug'], datasets: [{ data: [tSelf, tGrid], backgroundColor: ['#2ecc71', '#e74c3c'] }]},
-            options: opt
-        });
+        charts.ds = new Chart(document.getElementById('donutSources'), { type:'doughnut', data:{labels:['PV','Netz'],datasets:[{data:[tS,tG],backgroundColor:['#2ecc71','#e74c3c']}]}, options:o });
+        charts.du = new Chart(document.getElementById('donutUsage'), { type:'doughnut', data:{labels:['Eigen','Einspeisung'],datasets:[{data:[tS,tF],backgroundColor:['#2ecc71','#e67e22']}]}, options:o });
 
-        charts.donutUsage = new Chart(document.getElementById('donutUsage'), {
-            type: 'doughnut',
-            data: { labels: ['Eigenverbrauch', 'Einspeisung'], datasets: [{ data: [tSelf, tFeed], backgroundColor: ['#2ecc71', '#e67e22'] }]},
-            options: opt
-        });
-
-        // WICHTIG: Das Diagramm wie auf Seite 2
         charts.main = new Chart(document.getElementById('chartMain'), {
-            type: 'bar', data: { labels: labels, datasets: [
-                { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), backgroundColor: '#f1c40f', stack: '0' },
-                { label: 'Einspeisung', data: data.map(d=>d.feed), backgroundColor: '#e67e22', stack: '1' },
-                { label: 'Haus (PV)', data: data.map(d=>d.housePure), backgroundColor: '#2ecc71', stack: '2' },
-                { label: 'WP (PV)', data: data.map(d=>d.elec), backgroundColor: '#9b59b6', stack: '2' },
-                { label: 'Netzbezug', data: data.map(d=>d.grid), backgroundColor: '#e74c3c', stack: '3' }
-            ]}, options: opt 
-        });
-
-        charts.eff = new Chart(document.getElementById('chartEff'), {
-            type: 'line', data: { labels: labels, datasets: [{ label: 'Monats-JAZ', data: data.map(d=>d.hasHeat && d.elec>5 ? (d.heat/d.elec).toFixed(2) : null), borderColor: '#e67e22', tension: 0.3, spanGaps: true }] },
-            options: { ...opt, scales: { y: { suggestedMin: 2, suggestedMax: 5 } } }
-        });
-
-        charts.temp = new Chart(document.getElementById('chartTemp'), {
-            type: 'bar', data: { labels: labels, datasets: [
-                { label: 'Außen Ø', data: data.map(d=>d.tA), backgroundColor: '#3498db' },
-                { label: 'Vorlauf Ø', data: data.map(d=>d.tV), backgroundColor: '#e74c3c' }
-            ]}, options: opt
+            type: 'bar',
+            data: {
+                labels: keys,
+                datasets: [
+                    { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), backgroundColor: '#f1c40f', stack: 'Balken1' },
+                    { label: 'Einspeisung', data: data.map(d=>d.feed), backgroundColor: '#e67e22', stack: 'Balken2' },
+                    { label: 'Eigennutzung Haus', data: data.map(d=>d.housePure), backgroundColor: '#2ecc71', stack: 'Balken3' },
+                    { label: 'Netzbezug', data: data.map(d=>d.grid), backgroundColor: '#e74c3c', stack: 'Balken3' },
+                    { label: 'WP Strom', data: data.map(d=>d.elec), backgroundColor: '#9b59b6', stack: 'Balken4' }
+                ]
+            },
+            options: { ...o, scales: { x: { stacked: false }, y: { stacked: true } } }
         });
     }
 </script>

@@ -2,111 +2,118 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor Pro</title>
+    <title>Energie-Monitor Pro - Vollversion</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --bg: #f4f7f6; }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
-        .container { max-width: 1200px; margin: auto; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
+        .container { max-width: 1400px; margin: auto; }
         
-        /* Tabs & Controls */
-        .controls-wrap { display: flex; flex-direction: column; align-items: center; gap: 15px; margin-bottom: 25px; }
-        .tabs { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
-        .tab-btn { padding: 10px 18px; border-radius: 8px; border: 1px solid #ccc; background: #eee; cursor: pointer; font-weight: bold; }
+        /* Header & Upload */
+        .header-box { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.05); margin-bottom: 20px; text-align: center; }
+        .upload-area { border: 2px dashed #3498db; padding: 15px; border-radius: 8px; margin: 10px 0; }
+        
+        /* Controls & Preis */
+        .controls { display: flex; justify-content: center; gap: 20px; flex-wrap: wrap; margin-bottom: 20px; background: white; padding: 15px; border-radius: 12px; }
+        .controls div { font-weight: bold; font-size: 0.9em; }
+        input[type="number"] { width: 70px; padding: 4px; border-radius: 4px; border: 1px solid #ccc; }
+
+        /* Tabs */
+        .tabs-container { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 20px; }
+        .tabs { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+        .tab-btn { padding: 10px 18px; border-radius: 8px; border: 1px solid #ccc; background: #eee; cursor: pointer; font-weight: bold; transition: 0.2s; }
         .tab-btn.active { background: #3498db; color: white; border-color: #2980b9; }
-        .custom-btn { background: #2c3e50; color: white; }
+        .custom-btn { background: #2c3e50 !important; color: white; }
+
+        #rangeSelector { display: none; background: #fff; padding: 12px; border-radius: 10px; justify-content: center; align-items: center; gap: 15px; border: 1px solid #3498db; }
         
-        #rangeSelector { display: none; gap: 10px; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        /* Stats Grid - Alle Felder wie vorher */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 12px; margin-bottom: 20px; }
+        .stat-card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; border-bottom: 4px solid #ddd; }
+        .stat-card h3 { font-size: 0.7em; text-transform: uppercase; color: #7f8c8d; margin: 0; }
+        .stat-card p { margin: 8px 0 0; font-size: 1.15em; font-weight: bold; }
         
-        /* Stats */
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 25px; }
-        .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; border-bottom: 4px solid #ddd; }
-        .card h3 { font-size: 0.75rem; margin: 0; color: #7f8c8d; text-transform: uppercase; }
-        .card p { margin: 8px 0 0; font-size: 1.2rem; font-weight: bold; }
-        
-        .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: 450px; }
-        .status-msg { text-align: center; font-size: 0.85rem; color: #3498db; margin-bottom: 10px; }
+        .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: 500px; }
+        select { padding: 5px; border-radius: 4px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1 style="text-align:center">☀️ Energie-Monitor Pro</h1>
-    <p id="status" class="status-msg">Suche solar.csv und wp.csv...</p>
-
-    <div class="controls-wrap">
-        <div class="tabs" id="tabBar">
-            <button class="tab-btn active" onclick="setMode('All', '', this)">Gesamt</button>
-            <span id="yearButtons"></span>
-            <button class="tab-btn custom-btn" onclick="setMode('Custom', '', this)">📅 Zeitraum</button>
+    <div class="header-box">
+        <h1>☀️ Energie-Monitor Pro</h1>
+        <div class="upload-area">
+            <input type="file" id="fileInput" multiple accept=".csv">
+            <p style="font-size: 0.8em; color: #7f8c8d; margin-top: 5px;">Automatisch: solar.csv & wp.csv im selben Ordner</p>
         </div>
+    </div>
 
+    <div class="controls">
+        <div>Strompreis: <input type="number" id="inpPrice" step="0.1"> ct/kWh</div>
+        <div>Grundgebühr: <input type="number" id="inpBase" step="0.1"> €/Monat</div>
+        <div>Einspeisev.: <input type="number" id="inpFeedIn" step="0.01"> ct/kWh</div>
+    </div>
+
+    <div class="tabs-container">
+        <div class="tabs" id="tabBar">
+            <button class="tab-btn active" id="btnAll" onclick="changeMode('All', '', this)">Gesamt</button>
+            <span id="yearButtons"></span>
+            <button class="tab-btn custom-btn" onclick="changeMode('Custom', '', this)">📅 Zeitraum</button>
+        </div>
         <div id="rangeSelector">
-            Von: <select id="selStart"></select> 
-            Bis: <select id="selEnd"></select>
+            Von: <select id="selectStart"></select> Bis: <select id="selectEnd"></select>
         </div>
     </div>
 
     <div class="stats-grid">
-        <div class="card" style="border-color: var(--pv)"><h3>Erzeugung</h3><p id="txtPv">-</p></div>
-        <div class="card" style="border-color: var(--house)"><h3>Eigenbedarf</h3><p id="txtSelf">-</p></div>
-        <div class="card" style="border-color: var(--feedin)"><h3>Einspeisung</h3><p id="txtFeed">-</p></div>
-        <div class="card" style="border-color: var(--grid)"><h3>Netzbezug</h3><p id="txtGrid">-</p></div>
-        <div class="card" style="border-color: var(--wp)"><h3>WP Strom</h3><p id="txtWp">-</p></div>
-        <div class="card" style="border-color: #2c3e50"><h3>JAZ</h3><p id="txtJaz">-</p></div>
+        <div class="stat-card" style="border-color: var(--house)"><h3>Autarkie</h3><p id="txtAutarky">-</p></div>
+        <div class="stat-card" style="border-color: var(--pv)"><h3>Erzeugung</h3><p id="txtPvTotal">-</p></div>
+        <div class="stat-card" style="border-color: var(--house)"><h3>Eigenbedarf</h3><p id="txtSelf">-</p></div>
+        <div class="stat-card" style="border-color: var(--grid)"><h3>Netzbezug</h3><p id="txtGrid">-</p></div>
+        <div class="stat-card" style="border-color: var(--feedin)"><h3>Einspeisung</h3><p id="txtFeed">-</p></div>
+        <div class="stat-card" style="border-color: var(--wp)"><h3>WP Strom</h3><p id="txtWp">-</p></div>
+        <div class="stat-card" style="border-color: #e67e22"><h3>JAZ</h3><p id="txtJaz">-</p></div>
+        <div class="stat-card" style="border-color: #2c3e50"><h3>Kosten (Netto)</h3><p id="txtSaldo">-</p></div>
     </div>
 
-    <div class="chart-card">
-        <canvas id="mainChart"></canvas>
-    </div>
+    <div class="chart-card"><canvas id="chartMain"></canvas></div>
 </div>
 
 <script>
-    let sunStore = {}, wpStore = {}, chart = null;
-    let currentMode = 'All', currentYear = '';
+    let sunStore = {}, wpStore = {}, mainChart = null;
+    let currentMode = 'All', selectedYear = '';
 
-    // Automatisches Laden beim Start
     window.onload = async () => {
-        const loadFile = async (name) => {
-            try {
-                const res = await fetch(name);
-                return res.ok ? await res.text() : null;
-            } catch (e) { return null; }
-        };
+        // Preise laden
+        document.getElementById('inpPrice').value = localStorage.getItem('energy_price') || "28.0";
+        document.getElementById('inpBase').value = localStorage.getItem('energy_base') || "10.83";
+        document.getElementById('inpFeedIn').value = localStorage.getItem('energy_feedin') || "8.0";
 
-        const [solarTxt, wpTxt] = await Promise.all([loadFile('solar.csv'), loadFile('wp.csv')]);
-        
-        if (solarTxt) sunStore = parseSolar(solarTxt);
-        if (wpTxt) wpStore = parseWP(wpTxt);
-        
-        if (solarTxt || wpTxt) {
-            document.getElementById('status').innerText = "Daten erfolgreich geladen.";
-            initUI();
-        } else {
-            document.getElementById('status').innerText = "Fehler: solar.csv oder wp.csv nicht gefunden.";
-        }
+        // Auto-Load solar.csv & wp.csv
+        const fetchFile = async (n) => { try { const r = await fetch(n); return r.ok ? await r.text() : null; } catch(e){return null;} };
+        const [s, w] = await Promise.all([fetchFile('solar.csv'), fetchFile('wp.csv')]);
+        if(s) sunStore = parseSolar(s);
+        if(w) wpStore = parseWP(w);
+        if(s || w) updateUI();
     };
 
     function parseSolar(csv) {
         const data = {};
         const rows = Papa.parse(csv, {header: true, skipEmptyLines: true}).data;
         rows.forEach(r => {
-            const time = r.Time || r.time || "";
-            if (time.length < 7) return;
-            const m = time.substring(0, 7); // "2026-02"
+            const t = (r.Time || r.time || "").substring(0, 7);
+            if(t.length < 7) return;
+            if(!data[t]) data[t] = { pv: 0, feed: 0, grid: 0, self: 0 };
             
-            if (!data[m]) data[m] = { pv: 0, feed: 0, grid: 0, self: 0 };
-            
-            const p2g = parseFloat(r.PvToGrid) || 0, b2g = parseFloat(r.BatteryToGrid) || 0;
-            const p2s = parseFloat(r.PvToSite) || 0, b2s = parseFloat(r.BatteryToSite) || 0;
-            const p2b = parseFloat(r.PvToBattery) || 0;
+            const p2s = parseFloat(r.PvToSite) || 0, p2g = parseFloat(r.PvToGrid) || 0, p2b = parseFloat(r.PvToBattery) || 0;
+            const b2s = parseFloat(r.BatteryToSite) || 0, b2g = parseFloat(r.BatteryToGrid) || 0;
             const g2s = parseFloat(r.GridToSite) || 0, g2b = parseFloat(r.GridToBattery) || 0;
 
-            data[m].pv += (p2s + p2g + p2b);
-            data[m].feed += (p2g + b2g); // Feb-Fix: Summe beider Einspeisequellen
-            data[m].grid += (g2s + g2b);
-            data[m].self += (p2s + b2s);
+            data[t].pv += (p2s + p2g + p2b);
+            data[t].feed += (p2g + b2g); // Der Fix für Februar
+            data[t].grid += (g2s + g2b);
+            data[t].self += (p2s + b2s);
         });
         return data;
     }
@@ -118,30 +125,28 @@
             if ((r[0]||"").toString().toLowerCase() === "monat") {
                 let m = r[1];
                 if(m.includes(".")) { const p = m.split("."); m = `${p[2]}-${p[1].padStart(2,'0')}`; }
-                const heat = parseFloat(r[7]?.replace(/\./g, '').replace(',', '.')) || 0;
-                const elM = parseFloat(r[12]?.replace(/\./g, '').replace(',', '.')) || 0;
-                const elR = parseFloat(r[17]?.replace(/\./g, '').replace(',', '.')) || 0;
+                const heat = cleanN(r[7]), elM = cleanN(r[12]), elR = cleanN(r[17]);
                 data[m] = { elec: elM + elR, heat: heat + elM + elR };
             }
         });
         return data;
     }
 
-    function initUI() {
+    function cleanN(v) { return parseFloat(v?.toString().replace(/\./g, '').replace(',', '.')) || 0; }
+
+    function updateUI() {
         const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
-        
-        const yearBtnSpan = document.getElementById('yearButtons');
-        yearBtnSpan.innerHTML = "";
+        const yBox = document.getElementById('yearButtons');
+        yBox.innerHTML = "";
         years.forEach(y => {
-            const btn = document.createElement('button');
-            btn.className = 'tab-btn';
-            btn.innerText = y;
-            btn.onclick = () => setMode('Year', y, btn);
-            yearBtnSpan.appendChild(btn);
+            const b = document.createElement('button');
+            b.className = 'tab-btn'; b.innerText = y;
+            b.onclick = () => changeMode('Year', y, b);
+            yBox.appendChild(b);
         });
 
-        const sS = document.getElementById('selStart'), sE = document.getElementById('selEnd');
+        const sS = document.getElementById('selectStart'), sE = document.getElementById('selectEnd');
         sS.innerHTML = ""; sE.innerHTML = "";
         keys.forEach(k => { sS.add(new Option(k, k)); sE.add(new Option(k, k)); });
         sE.selectedIndex = keys.length - 1;
@@ -149,8 +154,8 @@
         render();
     }
 
-    function setMode(m, y, btn) {
-        currentMode = m; currentYear = y;
+    function changeMode(m, y, btn) {
+        currentMode = m; selectedYear = y;
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
         document.getElementById('rangeSelector').style.display = (m === 'Custom' ? 'flex' : 'none');
@@ -160,46 +165,71 @@
     function render() {
         const allKeys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         let keys = allKeys;
-
-        if (currentMode === 'Year') keys = allKeys.filter(k => k.startsWith(currentYear));
-        if (currentMode === 'Custom') {
-            const start = document.getElementById('selStart').value;
-            const end = document.getElementById('selEnd').value;
+        if(currentMode === 'Year') keys = allKeys.filter(k => k.startsWith(selectedYear));
+        if(currentMode === 'Custom') {
+            const start = document.getElementById('selectStart').value, end = document.getElementById('selectEnd').value;
             keys = allKeys.filter(k => k >= start && k <= end);
         }
 
-        const dSet = keys.map(k => ({
-            k, s: sunStore[k] || {pv:0, feed:0, grid:0, self:0}, w: wpStore[k] || {elec:0, heat:0}
-        }));
+        // Preise aus UI
+        const price = parseFloat(document.getElementById('inpPrice').value)/100 || 0;
+        const base = parseFloat(document.getElementById('inpBase').value) || 0;
+        const feedPrice = parseFloat(document.getElementById('inpFeedIn').value)/100 || 0;
+        
+        localStorage.setItem('energy_price', document.getElementById('inpPrice').value);
+        localStorage.setItem('energy_base', document.getElementById('inpBase').value);
+        localStorage.setItem('energy_feedin', document.getElementById('inpFeedIn').value);
 
+        const dSet = keys.map(k => ({ k, s: sunStore[k]||{pv:0, feed:0, grid:0, self:0}, w: wpStore[k]||{elec:0, heat:0} }));
         const t = dSet.reduce((a, b) => ({
-            pv: a.pv+b.s.pv, self: a.self+b.s.self, feed: a.feed+b.s.feed,
-            grid: a.grid+b.s.grid, elec: a.elec+b.w.elec, heat: a.heat+b.w.heat
+            pv: a.pv+b.s.pv, self: a.self+b.s.self, feed: a.feed+b.s.feed, grid: a.grid+b.s.grid, elec: a.elec+b.w.elec, heat: a.heat+b.w.heat
         }), {pv:0, self:0, feed:0, grid:0, elec:0, heat:0});
 
-        document.getElementById('txtPv').innerText = Math.round(t.pv) + " kWh";
+        const kostenTotal = (t.grid * price) + (keys.length * base);
+        const einspeiseVerg = t.feed * feedPrice;
+
+        document.getElementById('txtPvTotal').innerText = Math.round(t.pv) + " kWh";
         document.getElementById('txtSelf').innerText = Math.round(t.self) + " kWh";
         document.getElementById('txtFeed').innerText = Math.round(t.feed) + " kWh";
         document.getElementById('txtGrid').innerText = Math.round(t.grid) + " kWh";
         document.getElementById('txtWp').innerText = Math.round(t.elec) + " kWh";
         document.getElementById('txtJaz').innerText = t.elec > 0 ? (t.heat/t.elec).toFixed(2) : "-";
+        document.getElementById('txtAutarky').innerText = (t.grid+t.self > 0) ? (t.self/(t.grid+t.self)*100).toFixed(1) + "%" : "-";
+        document.getElementById('txtSaldo').innerText = (kostenTotal - einspeiseVerg).toFixed(2) + " €";
 
-        if (chart) chart.destroy();
-        chart = new Chart(document.getElementById('mainChart'), {
+        if(mainChart) mainChart.destroy();
+        mainChart = new Chart(document.getElementById('chartMain'), {
             type: 'bar',
             data: {
                 labels: keys,
                 datasets: [
-                    { label: 'Erzeugung', data: dSet.map(d => d.s.pv), backgroundColor: '#f1c40f' },
-                    { label: 'Eigenbedarf', data: dSet.map(d => d.s.self), backgroundColor: '#2ecc71' },
+                    { label: 'PV Erzeugung', data: dSet.map(d => d.s.pv), backgroundColor: '#f1c40f' },
+                    { label: 'Eigenverbrauch', data: dSet.map(d => d.s.self), backgroundColor: '#2ecc71' },
                     { label: 'Netzbezug', data: dSet.map(d => d.s.grid), backgroundColor: '#e74c3c' },
-                    { label: 'Wärmepumpe', data: dSet.map(d => d.w.elec), backgroundColor: '#9b59b6' },
+                    { label: 'WP Strom', data: dSet.map(d => d.w.elec), backgroundColor: '#9b59b6' },
                     { label: 'Einspeisung', data: dSet.map(d => d.s.feed), backgroundColor: '#e67e22' }
                 ]
             },
             options: { responsive: true, maintainAspectRatio: false }
         });
     }
+
+    document.getElementById('fileInput').onchange = e => {
+        const files = Array.from(e.target.files);
+        let done = 0;
+        files.forEach(f => {
+            const r = new FileReader();
+            r.onload = ev => {
+                if(ev.target.result.includes("PvToSite")) sunStore = parseSolar(ev.target.result);
+                else wpStore = parseWP(ev.target.result);
+                if(++done === files.length) updateUI();
+            };
+            r.readAsText(f);
+        });
+    };
+
+    // Live-Update bei Preisänderung
+    document.querySelectorAll('.controls input').forEach(inp => inp.oninput = render);
 </script>
 </body>
 </html>

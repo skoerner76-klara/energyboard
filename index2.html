@@ -2,214 +2,278 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Einzel-Charts</title>
+    <title>Energie-Monitor - Pro v3.0</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; padding: 20px; color: #333; margin: 0; }
-        .container { max-width: 1400px; margin: auto; padding: 20px; }
-        .card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px; }
-        .stat-card { background: white; padding: 15px; border-radius: 12px; text-align: center; border-bottom: 4px solid #ccc; }
-        .stat-card h3 { font-size: 0.7rem; text-transform: uppercase; color: #666; margin: 0; }
-        .stat-card p { font-size: 1.1rem; font-weight: bold; margin: 5px 0; }
-        .tabs { display: flex; gap: 8px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }
-        .tab-btn { padding: 8px 16px; border-radius: 20px; border: 1px solid #3498db; background: white; color: #3498db; cursor: pointer; font-weight: bold; }
-        .tab-btn.active { background: #3498db; color: white; }
-        .range-picker { display: none; justify-content: center; gap: 15px; margin-bottom: 20px; align-items: center; background: #e9ecef; padding: 10px; border-radius: 10px; }
-        .range-picker.active { display: flex; }
-        .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .full-chart { grid-column: span 2; height: 400px; }
-        .half-chart { height: 300px; }
+        :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --usage: #2980b9; --bg: #f4f7f6; --money: #27ae60; --saldo: #2c3e50; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
+        .container { max-width: 1600px; margin: auto; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }
+        .tab-btn { padding: 10px 20px; border-radius: 8px; border: none; background: #ddd; cursor: pointer; font-weight: bold; transition: 0.3s; }
+        .tab-btn.active { background: #3498db; color: white; box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3); }
+        .range-picker { background: #fff; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: none; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; }
+        .range-picker.visible { display: flex; }
+        .input-group { display: flex; align-items: center; gap: 8px; font-size: 0.9em; font-weight: bold; }
+        select, input { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-family: inherit; width: 100px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 25px; }
+        .stat-card { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; border-bottom: 4px solid #ddd; }
+        .stat-card h3 { font-size: 0.65em; text-transform: uppercase; color: #7f8c8d; margin: 0; white-space: nowrap; }
+        .stat-card p { margin: 8px 0 0; font-size: 1.05em; font-weight: bold; line-height: 1.2; }
+        .sub-val { display: block; font-size: 0.75em; color: #7f8c8d; font-weight: normal; margin-top: 4px; }
+        .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
+        .main-chart-container { height: 400px; position: relative; }
+        .side-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+        .upload-area { background: #fff; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px; border: 3px dashed #3498db; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <div class="card" style="text-align: center; border: 2px dashed #3498db;">
+    <h1 style="text-align:center">📊 Energie- & Kosten-Analyse Pro</h1>
+    
+    <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <div id="status" style="margin-top:10px; font-weight:bold; color:#3498db;">Daten-Analyse bereit</div>
+        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Zuerst solar.csv und wp.csv auswählen</div>
     </div>
 
     <div id="tabBar" class="tabs"></div>
 
     <div id="rangeSelector" class="range-picker">
-        Von: <select id="selStart"></select> Bis: <select id="selEnd"></select>
+        <div class="input-group">Von: <select id="selectStart"></select></div>
+        <div class="input-group">Bis: <select id="selectEnd"></select></div>
+        <div style="width: 2px; height: 30px; background: #eee;"></div>
+        <div class="input-group">Preis (ct/kWh): <input type="number" id="inpPrice" step="0.01"></div>
+        <div class="input-group">Grundgebühr (€/Mon): <input type="number" id="inpBase" step="0.01"></div>
     </div>
 
     <div class="stats-grid">
-        <div class="stat-card" style="border-color: #2ecc71"><h3>Autarkie</h3><p id="txtAut">-</p></div>
-        <div class="stat-card" style="border-color: #f1c40f"><h3>PV Erzeugung</h3><p id="txtPv">-</p></div>
-        <div class="stat-card" style="border-color: #9b59b6"><h3>WP Strom</h3><p id="txtWp">-</p></div>
-        <div class="stat-card" style="border-color: #e74c3c"><h3>Netzbezug</h3><p id="txtGrid">-</p></div>
-        <div class="stat-card" style="border-color: #e67e22"><h3>Einspeisung</h3><p id="txtFeed">-</p></div>
-        <div class="stat-card" style="border-color: #34495e"><h3>Saldo</h3><p id="txtSaldo">-</p></div>
-        <div class="stat-card" style="border-color: #3498db"><h3>JAZ Ø</h3><p id="txtJaz">-</p></div>
+        <div class="stat-card" style="border-color: var(--house)"><h3>Autarkie</h3><p id="txtAutarky">-</p></div>
+        <div class="stat-card" style="border-color: var(--feedin)"><h3>JAZ (Ø)</h3><p id="txtJaz">-</p></div>
+        <div class="stat-card" style="border-color: var(--usage)"><h3>PV Nutzung</h3><p id="txtPvUsagePct">-</p></div>
+        <div class="stat-card" style="border-color: var(--pv)"><h3>PV Erzeugung</h3><p id="txtPvTotal">-</p></div>
+        <div class="stat-card" style="border-color: var(--house)"><h3>PV Eigenbedarf</h3><p id="txtPvSelfTotal">-</p></div>
+        <div class="stat-card" style="border-color: var(--wp)"><h3>WP Strom</h3><p id="txtWpTotal">-</p></div>
+        <div class="stat-card" style="border-color: var(--grid)"><h3>Netzbezug</h3><p id="txtGridTotal">-</p></div>
+        <div class="stat-card" style="border-color: var(--feedin)"><h3>Einspeisung</h3><p id="txtFeedTotal">-</p></div>
+        <div class="stat-card" style="border-color: var(--saldo)"><h3>Saldo (€)</h3><p id="txtSaldo">-</p></div>
     </div>
 
-    <div class="charts-grid">
-        <div class="card full-chart"><h3>Energie-Flüsse (kWh)</h3><canvas id="chartMain"></canvas></div>
-        
-        <div class="card half-chart"><h3>Autarkie-Trend (%)</h3><canvas id="chartAutarkie"></canvas></div>
-        
-        <div class="card half-chart"><h3>WP Effizienz (JAZ)</h3><canvas id="chartJaz"></canvas></div>
-        
-        <div class="card full-chart"><h3>Außentemperatur (°C)</h3><canvas id="chartTemp"></canvas></div>
+    <div class="chart-card"><h2>Energiebilanz (kWh)</h2><div class="main-chart-container"><canvas id="chartMain"></canvas></div></div>
+    
+    <div class="side-charts">
+        <div class="chart-card"><h2>Energie-Trends (kWh)</h2><div style="height:300px"><canvas id="chartLines"></canvas></div></div>
+        <div class="chart-card"><h2>Autarkie & Eigennutzung (%)</h2><div style="height:300px"><canvas id="chartAutarky"></canvas></div></div>
+    </div>
 
-        <div class="card half-chart"><h3>PV Nutzung</h3><canvas id="chartPvDist"></canvas></div>
-        <div class="card half-chart"><h3>Hausstrom Quellen</h3><canvas id="chartSource"></canvas></div>
+    <div class="side-charts">
+        <div class="chart-card"><h2>Monats-JAZ (Heizleistung / Stromaufnahme)</h2><div style="height:300px"><canvas id="chartEff"></canvas></div></div>
+        <div class="chart-card"><h2>Ø Temperaturen (°C)</h2><div style="height:300px"><canvas id="chartTemp"></canvas></div></div>
     </div>
 </div>
 
 <script>
-    let sunStore = {}, wpStore = {}, charts = {};
-    let currentMode = 'Gesamt';
+    const DEFAULT_PREIS = 0.293;  
+    const DEFAULT_GG = 10.83;     
+    const VERGUETUNG_PV = 0.0795; 
 
-    const COLORS = {
-        pGrid: '#e67e22', pBatt: '#f39c12', pSite: '#f1c40f',
-        bGrid: '#d35400', bSite: '#2ecc71', gSite: '#e74c3c', 
-        wp: '#9b59b6', temp: '#3498db', jaz: '#2c3e50', aut: '#27ae60'
-    };
+    let sunStore = {}, wpStore = {}, charts = {};
+    let currentMode = 'All', selectedYear = '';
 
     window.onload = () => {
-        ['solar.csv', 'wp.csv'].forEach(f => fetch(f).then(r => r.ok ? r.text() : null).then(t => { if(t) processCSV(t); }));
+        document.getElementById('inpPrice').value = (DEFAULT_PREIS * 100).toFixed(2);
+        document.getElementById('inpBase').value = DEFAULT_GG.toFixed(2);
+        
         document.getElementById('fileInput').onchange = e => {
-            Array.from(e.target.files).forEach(f => {
-                const r = new FileReader();
-                r.onload = ev => processCSV(ev.target.result);
-                r.readAsText(f);
+            Array.from(e.target.files).forEach(file => {
+                const reader = new FileReader();
+                reader.onload = (ev) => {
+                    const text = ev.target.result;
+                    if (text.includes("PvToSite")) sunStore = parseSun(text); 
+                    else wpStore = parseWp(text);
+                    initDashboard();
+                };
+                reader.readAsText(file);
             });
         };
-        document.getElementById('selStart').onchange = render;
-        document.getElementById('selEnd').onchange = render;
     };
 
-    function processCSV(csv) {
-        if (csv.includes("PvToSite")) {
-            const res = Papa.parse(csv, { header: true, skipEmptyLines: true });
-            res.data.forEach(row => {
-                const m = (row.Time || row.time || "").substring(0, 7);
-                if (m.length < 7) return;
-                if (!sunStore[m]) sunStore[m] = { p2g:0, p2b:0, p2s:0, b2g:0, b2s:0, g2s:0 };
-                sunStore[m].p2g += parseFloat(row.PvToGrid) || 0;
-                sunStore[m].p2b += parseFloat(row.PvToBattery) || 0;
-                sunStore[m].p2s += parseFloat(row.PvToSite) || 0;
-                sunStore[m].b2g += parseFloat(row.BatteryToGrid) || 0;
-                sunStore[m].b2s += parseFloat(row.BatteryToSite) || 0;
-                sunStore[m].g2s += parseFloat(row.GridToSite) || 0;
-            });
-        } else {
-            const rows = Papa.parse(csv, { delimiter: ";", skipEmptyLines: true }).data;
-            rows.forEach(row => {
-                if (row[0]?.toString().toLowerCase() === "monat") {
-                    let m = row[1];
-                    if (m.includes(".")) { const p = m.split("."); m = `${p[2]}-${p[1].padStart(2, '0')}`; }
-                    const e = parseFloat(row[12]?.toString().replace(',','.')) || 0;
-                    const h = parseFloat(row[7]?.toString().replace(',','.')) || 0;
-                    const t = parseFloat(row[3]?.toString().replace(',','.')) || 0;
-                    if (e > 0 || h > 0) wpStore[m] = { elec: e, heat: h, temp: t };
+    function parseWp(csvText) {
+        const rows = Papa.parse(csvText.trim(), {delimiter: ";", skipEmptyLines: true}).data;
+        const monthly = {};
+        rows.forEach(row => {
+            if ((row[0]||"").toString().toLowerCase() === "monat") {
+                let key = row[1];
+                if (key.includes(".")) {
+                    const p = key.split(".");
+                    key = `${p[p.length-1]}-${p[p.length-2].padStart(2, '0')}`;
                 }
-            });
-        }
-        updateTabs();
-        render();
+                const heatProd = cleanNum(row[7]); // Produzierte Wärme Umgebung
+                const wpElec = cleanNum(row[12]);  // Verbrauchte Energie WP
+                const addElec = cleanNum(row[17]); // Elektrischer Zuheizer
+                const tAussen = cleanNum(row[21]);
+                const tVorlauf = cleanNum(row[22]);
+                
+                const totalElec = wpElec + addElec;
+                // JAZ Logik: (Wärme aus Umgebung + eingesetzter Strom) / eingesetzter Strom
+                const totalHeat = heatProd + totalElec;
+
+                if (totalElec > 0 || heatProd > 0) {
+                    monthly[key] = { 
+                        elec: totalElec, 
+                        heat: totalHeat, 
+                        tAussen: tAussen, 
+                        tVorlauf: tVorlauf, 
+                        hasHeat: heatProd > 0.5 
+                    };
+                }
+            }
+        });
+        return monthly;
     }
 
-    function updateTabs() {
-        const allMonths = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
-        const years = ['Gesamt', ...new Set(allMonths.map(m => m.substring(0, 4))), 'Benutzerdefiniert'];
+    function parseSun(csvText) {
+        const rows = Papa.parse(csvText, {header: true, skipEmptyLines: true}).data;
+        const monthly = {};
+        rows.forEach(row => {
+            const time = row.Time || row.time || "";
+            if (time.length < 7) return;
+            const key = time.substring(0, 7);
+            if (!monthly[key]) monthly[key] = { grid: 0, self: 0, feed: 0 };
+            monthly[key].grid += parseFloat(row.GridToSite) || 0;
+            monthly[key].self += (parseFloat(row.PvToSite) || 0) + (parseFloat(row.BatteryToSite) || 0);
+            monthly[key].feed += (parseFloat(row.PvToGrid) || 0) + (parseFloat(row.BatteryToGrid) || 0);
+        });
+        return monthly;
+    }
+
+    function cleanNum(val) {
+        if (!val || val === "-" || val === "") return 0;
+        let s = val.toString().replace(/\./g, '').replace(',', '.');
+        return parseFloat(s) || 0;
+    }
+
+    function initDashboard() {
+        const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
+        if (keys.length === 0) return;
+        const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
         const tabBar = document.getElementById('tabBar');
         tabBar.innerHTML = '';
-        years.forEach(y => {
+        
+        const createBtn = (label, mode, yr = '') => {
             const btn = document.createElement('button');
-            btn.className = `tab-btn ${currentMode === y ? 'active' : ''}`;
-            btn.innerText = y;
-            btn.onclick = () => { currentMode = y; render(); };
+            btn.innerText = label;
+            btn.className = 'tab-btn' + (currentMode === mode && yr === selectedYear ? ' active' : '');
+            btn.onclick = () => {
+                currentMode = mode; selectedYear = yr;
+                document.getElementById('rangeSelector').classList.toggle('visible', mode === 'Custom');
+                updateTabStyles(); render();
+            };
             tabBar.appendChild(btn);
+        }
+        createBtn('Gesamt', 'All');
+        years.forEach(y => createBtn(y, 'Year', y));
+        createBtn('Benutzerdefiniert', 'Custom');
+
+        const startSel = document.getElementById('selectStart');
+        const endSel = document.getElementById('selectEnd');
+        const oldStart = startSel.value, oldEnd = endSel.value;
+        startSel.innerHTML = endSel.innerHTML = '';
+        keys.forEach(k => { startSel.add(new Option(k, k)); endSel.add(new Option(k, k)); });
+        startSel.value = oldStart || keys[0];
+        endSel.value = oldEnd || keys[keys.length - 1];
+
+        [startSel, endSel, document.getElementById('inpPrice'), document.getElementById('inpBase')].forEach(el => {
+            el.oninput = () => render();
         });
-        const sS = document.getElementById('selStart'), sE = document.getElementById('selEnd');
-        if (sS.options.length === 0) allMonths.forEach(m => { sS.add(new Option(m, m)); sE.add(new Option(m, m)); });
+        render();
+        document.getElementById('statusLine').innerText = "Daten geladen: " + keys.length + " Monate gefunden.";
+    }
+
+    function updateTabStyles() {
+        document.querySelectorAll('.tab-btn').forEach(b => {
+            const isActive = (b.innerText === 'Gesamt' && currentMode === 'All') || 
+                             (b.innerText === selectedYear && currentMode === 'Year') ||
+                             (b.innerText === 'Benutzerdefiniert' && currentMode === 'Custom');
+            b.classList.toggle('active', isActive);
+        });
     }
 
     function render() {
-        const allMonths = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
-        if (allMonths.length === 0) return;
-        document.getElementById('rangeSelector').classList.toggle('active', currentMode === 'Benutzerdefiniert');
-        
-        let filtered = allMonths;
-        if (currentMode === 'Benutzerdefiniert') {
-            filtered = allMonths.filter(m => m >= document.getElementById('selStart').value && m <= document.getElementById('selEnd').value);
-        } else if (currentMode !== 'Gesamt') {
-            filtered = allMonths.filter(m => m.startsWith(currentMode));
+        let keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
+        let priceToUse = parseFloat(document.getElementById('inpPrice').value) / 100 || DEFAULT_PREIS;
+        let baseToUse = parseFloat(document.getElementById('inpBase').value) || DEFAULT_GG;
+
+        if (currentMode === 'Year') keys = keys.filter(k => k.startsWith(selectedYear));
+        else if (currentMode === 'Custom') {
+            const start = document.getElementById('selectStart').value;
+            const end = document.getElementById('selectEnd').value;
+            keys = keys.filter(k => k >= start && k <= end);
         }
 
-        let sPv=0, sWp=0, sGrid=0, sFeed=0, sHeat=0, sSelf=0;
-        const data = filtered.map(m => {
-            const s = sunStore[m] || { p2g:0, p2b:0, p2s:0, b2g:0, b2s:0, g2s:0 };
-            const w = wpStore[m] || { elec:0, heat:0, temp:0 };
-            sPv += (s.p2g + s.p2b + s.p2s); sWp += w.elec; sGrid += s.g2s;
-            sFeed += (s.p2g + s.b2g); sSelf += (s.p2s + s.b2s); sHeat += w.heat;
-            return { m, ...s, wpE: w.elec, jaz: w.elec > 0 ? w.heat/w.elec : 0, temp: w.temp, aut: (s.p2s+s.b2s+s.g2s)>0 ? ((s.p2s+s.b2s)/(s.p2s+s.b2s+s.g2s)*100) : 0 };
+        if (keys.length === 0) return;
+        const data = keys.map(m => {
+            const wp = wpStore[m] || {elec:0, heat:0, tAussen:0, tVorlauf:0, hasHeat:false};
+            const sun = sunStore[m] || {grid:0, self:0, feed:0};
+            const pvGen = sun.self + sun.feed, totalNeed = sun.self + sun.grid;
+            return { m, pvGen, totalNeed, housePure: Math.max(0, sun.self - wp.elec), ...wp, ...sun,
+                      autarky: totalNeed > 0 ? (sun.self / totalNeed * 100) : 0, usage: pvGen > 0 ? (sun.self / pvGen * 100) : 0 };
         });
 
-        document.getElementById('txtAut').innerText = (sSelf+sGrid) > 0 ? (sSelf/(sSelf+sGrid)*100).toFixed(1) + "%" : "-";
-        document.getElementById('txtPv').innerText = sPv.toFixed(0) + " kWh";
-        document.getElementById('txtWp').innerText = sWp.toFixed(0) + " kWh";
-        document.getElementById('txtGrid').innerText = sGrid.toFixed(0) + " kWh";
-        document.getElementById('txtFeed').innerText = sFeed.toFixed(0) + " kWh";
-        document.getElementById('txtJaz').innerText = sWp > 0 ? (sHeat/sWp).toFixed(2) : "-";
-        document.getElementById('txtSaldo').innerText = ((sGrid * 0.3) - (sFeed * 0.08)).toFixed(2) + " €";
+        const tGrid = data.reduce((s,d)=>s+d.grid,0), tSelf = data.reduce((s,d)=>s+d.self,0), tPv = data.reduce((s,d)=>s+d.pvGen,0), tFeed = data.reduce((s,d)=>s+d.feed,0);
+        const gridCostTotal = tGrid * priceToUse + (data.length * baseToUse);
+        const feedMoney = tFeed * VERGUETUNG_PV;
 
-        updateCharts(filtered, data, sPv, sSelf, sGrid);
-    }
+        document.getElementById('txtPvTotal').innerText = tPv.toFixed(0) + " kWh";
+        document.getElementById('txtPvSelfTotal').innerText = tSelf.toFixed(0) + " kWh";
+        document.getElementById('txtPvUsagePct').innerText = (tPv > 0) ? (tSelf/tPv*100).toFixed(1) + "%" : "-";
+        document.getElementById('txtAutarky').innerText = (tGrid+tSelf > 0) ? (tSelf/(tGrid+tSelf)*100).toFixed(1)+"%" : "-";
+        document.getElementById('txtGridTotal').innerHTML = `${tGrid.toFixed(0)} kWh <span class="sub-val">(${gridCostTotal.toFixed(2)} €)</span>`;
+        document.getElementById('txtFeedTotal').innerHTML = `${tFeed.toFixed(0)} kWh <span class="sub-val">(${feedMoney.toFixed(2)} €)</span>`;
+        document.getElementById('txtSaldo').innerHTML = `${(gridCostTotal - feedMoney).toFixed(2)} € <span class="sub-val">Kosten Netto</span>`;
+        
+        const active = data.filter(d => d.hasHeat && d.elec > 10);
+        document.getElementById('txtJaz').innerText = active.length > 0 ? (active.reduce((s,d)=>s+d.heat,0)/active.reduce((s,d)=>s+d.elec,0)).toFixed(2) : "-";
+        document.getElementById('txtWpTotal').innerText = data.reduce((s,d)=>s+d.elec,0).toFixed(0)+" kWh";
 
-    function updateCharts(labels, data, tPv, tSelf, tGrid) {
-        Object.values(charts).forEach(c => c?.destroy());
-        const cfg = { responsive: true, maintainAspectRatio: false };
+        Object.values(charts).forEach(c => { if(c) c.destroy(); });
+        const opt = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } };
 
         charts.main = new Chart(document.getElementById('chartMain'), {
-            type: 'bar',
-            data: {
-                labels: labels,
-                datasets: [
-                    { label: 'PV Erzeugung', data: data.map(d=>(d.p2g+d.p2b+d.p2s)), backgroundColor: COLORS.pSite, stack: '0' },
-                    { label: 'Einspeisung', data: data.map(d=>(d.p2g+d.b2g)), backgroundColor: COLORS.pGrid, stack: '1' },
-                    { label: 'Haus (Eigen)', data: data.map(d=>(d.p2s+d.b2s)), backgroundColor: COLORS.bSite, stack: '2' },
-                    { label: 'Haus (Netz)', data: data.map(d=>d.g2s), backgroundColor: COLORS.gSite, stack: '2' },
-                    { label: 'WP Strom', data: data.map(d=>d.wpE), backgroundColor: COLORS.wp, stack: '3' }
-                ]
-            },
-            options: { ...cfg, scales: { x: { stacked: false }, y: { stacked: true } } }
+            type: 'bar', data: { labels: keys, datasets: [
+                { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), backgroundColor: '#f1c40f', stack: '0' },
+                { label: 'Einspeisung', data: data.map(d=>d.feed), backgroundColor: '#e67e22', stack: '1' },
+                { label: 'Hausverbrauch (PV)', data: data.map(d=>d.housePure), backgroundColor: '#2ecc71', stack: '2' },
+                { label: 'WP Strom (PV)', data: data.map(d=>d.elec), backgroundColor: '#9b59b6', stack: '2' },
+                { label: 'Netzbezug', data: data.map(d=>d.grid), backgroundColor: '#e74c3c', stack: '3' }
+            ]}, options: opt 
         });
 
-        charts.autarkie = new Chart(document.getElementById('chartAutarkie'), {
-            type: 'line',
-            data: { labels: labels, datasets: [{ label: 'Autarkie %', data: data.map(d=>d.aut), borderColor: COLORS.aut, tension: 0.3 }] },
-            options: cfg
+        charts.lines = new Chart(document.getElementById('chartLines'), {
+            type: 'line', data: { labels: keys, datasets: [
+                { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), borderColor: '#f1c40f', fill: false, tension: 0.3 },
+                { label: 'Gesamtbedarf', data: data.map(d=>d.totalNeed), borderColor: '#2c3e50', borderDash: [5, 5], fill: false, tension: 0.3 },
+                { label: 'WP Strom', data: data.map(d=>d.elec), borderColor: '#9b59b6', fill: false, tension: 0.3 }
+            ]}, options: opt
         });
 
-        charts.jaz = new Chart(document.getElementById('chartJaz'), {
-            type: 'bar',
-            data: { labels: labels, datasets: [{ label: 'Monats-JAZ', data: data.map(d=>d.jaz), backgroundColor: COLORS.jaz }] },
-            options: { ...cfg, scales: { y: { min: 0, max: 6 } } }
+        charts.aut = new Chart(document.getElementById('chartAutarky'), {
+            type: 'line', data: { labels: keys, datasets: [
+                { label: 'Autarkie (%)', data: data.map(d=>d.autarky.toFixed(1)), borderColor: '#2ecc71', tension: 0.3 },
+                { label: 'PV Nutzung (%)', data: data.map(d=>d.usage.toFixed(1)), borderColor: '#2980b9', tension: 0.3 }
+            ]}, options: { ...opt, scales: { y: { beginAtZero: true, max: 100 } } }
+        });
+
+        charts.eff = new Chart(document.getElementById('chartEff'), {
+            type: 'line', data: { labels: keys, datasets: [{ label: 'Monats-JAZ', data: data.map(d=>d.hasHeat && d.elec>5 ? (d.heat/d.elec).toFixed(2) : null), borderColor: '#e67e22', tension: 0.3, spanGaps: true }] },
+            options: { ...opt, scales: { y: { min: 0, suggestedMax: 6 } } }
         });
 
         charts.temp = new Chart(document.getElementById('chartTemp'), {
-            type: 'line',
-            data: { labels: labels, datasets: [{ label: 'Außentemperatur °C', data: data.map(d=>d.temp), borderColor: COLORS.temp, backgroundColor: 'rgba(52, 152, 219, 0.1)', fill: true }] },
-            options: cfg
-        });
-
-        charts.pv = new Chart(document.getElementById('chartPvDist'), {
-            type: 'doughnut',
-            data: { labels: ['Eigenverbrauch', 'Export'], datasets: [{ data: [tSelf, tPv-tSelf], backgroundColor: [COLORS.pSite, COLORS.pGrid] }] },
-            options: cfg
-        });
-
-        charts.src = new Chart(document.getElementById('chartSource'), {
-            type: 'doughnut',
-            data: { labels: ['PV/Akku', 'Netz'], datasets: [{ data: [tSelf, tGrid], backgroundColor: [COLORS.bSite, COLORS.gSite] }] },
-            options: cfg
+            type: 'bar', data: { labels: keys, datasets: [
+                { label: 'Außen Ø', data: data.map(d=>d.tAussen), backgroundColor: '#3498db' },
+                { label: 'Vorlauf Ø', data: data.map(d=>d.tVorlauf), backgroundColor: '#e74c3c' }
+            ]}, options: opt
         });
     }
 </script>

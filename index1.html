@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor Pro - Februar Fix</title>
+    <title>Energie-Monitor Pro - Einspeise Fix</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -80,20 +80,27 @@
         rows.forEach(r => {
             let tRaw = r.Time || r.time || "";
             if(!tRaw) return;
-            // Robustes Datum-Parsing: Extrahiert YYYY-MM unabhängig von der Länge des restlichen Strings
             const match = tRaw.match(/(\d{4}-\d{2})/);
             if(!match) return;
             const t = match[1];
 
             if(!data[t]) data[t] = { pv: 0, feed: 0, grid: 0, self: 0 };
             
-            const p2s = parseFloat(r.PvToSite) || 0, p2g = parseFloat(r.PvToGrid) || 0, p2b = parseFloat(r.PvToBattery) || 0;
-            const b2s = parseFloat(r.BatteryToSite) || 0, b2g = parseFloat(r.BatteryToGrid) || 0;
-            const g2s = parseFloat(r.GridToSite) || 0, g2b = parseFloat(r.GridToBattery) || 0;
+            // Werte extrahieren
+            const p2s = parseFloat(r.PvToSite) || 0;
+            const p2g = parseFloat(r.PvToGrid) || 0;
+            const p2b = parseFloat(r.PvToBattery) || 0;
+            const b2s = parseFloat(r.BatteryToSite) || 0;
+            const b2g = parseFloat(r.BatteryToGrid) || 0;
+            const g2s = parseFloat(r.GridToSite) || 0;
+            const g2b = parseFloat(r.GridToBattery) || 0;
 
+            // BERECHNUNG:
             data[t].pv += (p2s + p2g + p2b);
+            // Einspeisung ist ALLES was zum Grid geht (Pv + Battery)
             data[t].feed += (p2g + b2g);
             data[t].grid += (g2s + g2b);
+            // Eigenbedarf ist ALLES was vom Haus verbraucht wird (Direkt von PV + von Batterie)
             data[t].self += (p2s + b2s);
         });
         return data;
@@ -167,7 +174,7 @@
             self: a.self+b.s.self, elec: a.elec+b.w.elec, heat: a.heat+b.w.heat
         }), {pv:0, feed:0, grid:0, self:0, elec:0, heat:0});
 
-        const cost = (t.grid * price) + (keys.length * base), earn = t.feed * 0.0795;
+        const cost = (t.grid * price) + (keys.length * base), earn = t.feed * 0.08;
 
         document.getElementById('txtPvTotal').innerText = t.pv.toFixed(0) + " kWh";
         document.getElementById('txtSelf').innerText = t.self.toFixed(0) + " kWh";
@@ -185,7 +192,7 @@
                 labels: keys,
                 datasets: [
                     { label: 'PV Erzeugung', data: dSet.map(d => d.s.pv), backgroundColor: '#f1c40f' },
-                    { label: 'Eigenbedarf', data: dSet.map(d => d.s.self), backgroundColor: '#2ecc71' },
+                    { label: 'Eigenverbrauch', data: dSet.map(d => d.s.self), backgroundColor: '#2ecc71' },
                     { label: 'Netzbezug', data: dSet.map(d => d.s.grid), backgroundColor: '#e74c3c' },
                     { label: 'Wärmepumpe', data: dSet.map(d => d.w.elec), backgroundColor: '#9b59b6' },
                     { label: 'Einspeisung', data: dSet.map(d => d.s.feed), backgroundColor: '#e67e22' }

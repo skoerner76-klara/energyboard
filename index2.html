@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor Pro - Fix Balken 3</title>
+    <title>Energie-Monitor Pro - Logik Fix</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -12,11 +12,8 @@
         .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
         .tab-btn { padding: 10px 20px; border-radius: 8px; border: none; background: #ddd; cursor: pointer; font-weight: bold; }
         .tab-btn.active { background: #3498db; color: white; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; margin-bottom: 20px; }
-        .stat-card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); text-align: center; border-bottom: 4px solid #ddd; }
-        .stat-card p { margin: 5px 0 0; font-size: 1.2em; font-weight: bold; }
-        .donut-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
         .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.08); margin-bottom: 20px; }
+        .donut-row { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
         h2 { font-size: 1.1em; margin-bottom: 15px; color: #34495e; border-left: 4px solid #3498db; padding-left: 10px; }
     </style>
 </head>
@@ -24,30 +21,21 @@
 
 <div class="container">
     <h1 style="text-align:center">📊 Energie-Analyse Pro</h1>
-    <div id="statusLine" style="text-align:center; color:#3498db; margin-bottom:15px;">Synchronisiere mit GitHub...</div>
-
+    <div id="statusLine" style="text-align:center; color:#3498db; margin-bottom:15px;">Daten-Abgleich...</div>
     <div id="tabBar" class="tabs"></div>
 
-    <div class="stats-grid">
-        <div class="stat-card" style="border-color: var(--house)"><h3>Autarkie</h3><p id="txtAutarky">-</p></div>
-        <div class="stat-card" style="border-color: var(--feedin)"><h3>JAZ</h3><p id="txtJaz">-</p></div>
-        <div class="stat-card" style="border-color: var(--pv)"><h3>PV Ertrag</h3><p id="txtPvTotal">-</p></div>
-        <div class="stat-card" style="border-color: var(--grid)"><h3>Netzbezug</h3><p id="txtGridTotal">-</p></div>
-    </div>
-
     <div class="donut-row">
-        <div class="chart-card"><h2>Energiequellen Haus & WP</h2><div style="height:200px"><canvas id="donutSources"></canvas></div></div>
-        <div class="chart-card"><h2>PV Nutzung</h2><div style="height:200px"><canvas id="donutUsage"></canvas></div></div>
+        <div class="chart-card"><h2>Haus-Mix (Balken 3 Details)</h2><div style="height:200px"><canvas id="donutSources"></canvas></div></div>
+        <div class="chart-card"><h2>PV-Verbleib (Balken 1 Details)</h2><div style="height:200px"><canvas id="donutUsage"></canvas></div></div>
     </div>
 
     <div class="chart-card">
-        <h2>Energieflüsse pro Monat</h2>
+        <h2>Monatliche Energieflüsse (kWh)</h2>
         <div style="height:450px"><canvas id="chartMain"></canvas></div>
     </div>
 </div>
 
 <script>
-    const DEFAULT_PREIS = 0.293, VERGUETUNG = 0.0795;
     let sunStore = {}, wpStore = {}, charts = {}, currentMode = 'All', selectedYear = '';
 
     async function loadData() {
@@ -56,7 +44,7 @@
             try {
                 const res = await fetch(file + '?t=' + Date.now());
                 if (res.ok) processData(await res.text(), file);
-            } catch(e) { console.log("Fehler beim Laden:", file); }
+            } catch(e) { console.error(e); }
         }
     }
 
@@ -73,23 +61,8 @@
         } else {
             wpStore = parseWp(text); localStorage.setItem('wpStore', JSON.stringify(wpStore));
         }
-        document.getElementById('statusLine').innerText = "Daten aktuell";
+        document.getElementById('statusLine').innerText = "Live-Daten geladen";
         initDashboard();
-    }
-
-    function cleanNum(val) { return parseFloat(val?.toString().replace(/\./g, '').replace(',', '.')) || 0; }
-
-    function parseWp(csv) {
-        const rows = Papa.parse(csv.trim(), {delimiter: ";", skipEmptyLines: true}).data;
-        const res = {};
-        rows.forEach(r => {
-            if (r[0]?.toLowerCase() === "monat") {
-                let k = r[1]; if(k.includes(".")) { const p = k.split("."); k = `${p[2]}-${p[1].padStart(2,'0')}`; }
-                const e = cleanNum(r[12]) + cleanNum(r[17]), h = cleanNum(r[7]) + cleanNum(r[12]);
-                if(e > 0 || h > 0) res[k] = { elec: e, heat: h };
-            }
-        });
-        return res;
     }
 
     function parseSun(csv) {
@@ -97,21 +70,33 @@
         const res = {};
         rows.forEach(r => {
             const t = (r.Time || r.time || "").substring(0, 7); if(!t) return;
-            if(!res[t]) res[t] = { grid: 0, self: 0, feed: 0 };
+            if(!res[t]) res[t] = { grid: 0, self: 0, feed: 0, prod: 0 };
+            const p2s = parseFloat(r.PvToSite) || 0, b2s = parseFloat(r.BatteryToSite) || 0, 
+                  p2g = parseFloat(r.PvToGrid) || 0, b2g = parseFloat(r.BatteryToGrid) || 0,
+                  p2b = parseFloat(r.PvToBattery) || 0;
+            
             res[t].grid += parseFloat(r.GridToSite) || 0;
-            res[t].self += (parseFloat(r.PvToSite) || 0) + (parseFloat(r.BatteryToSite) || 0);
-            res[t].feed += (parseFloat(r.PvToGrid) || 0) + (parseFloat(r.BatteryToGrid) || 0);
+            res[t].self += (p2s + b2s); // Eigenverbrauch aus PV und Batterie
+            res[t].feed += (p2g + b2g); // Einspeisung aus PV und Batterie
+            res[t].prod += (p2s + p2g + p2b); // Echte Erzeugung vom Dach
+        });
+        return res;
+    }
+
+    function parseWp(csv) {
+        const rows = Papa.parse(csv.trim(), {delimiter: ";", skipEmptyLines: true}).data;
+        const res = {};
+        rows.forEach(r => {
+            if (r[0]?.toLowerCase() === "monat") {
+                let k = r[1]; if(k.includes(".")) { const p = k.split("."); k = `${p[2]}-${p[1].padStart(2,'0')}`; }
+                res[k] = { elec: (parseFloat(r[12].replace(',','.'))||0) + (parseFloat(r[17].replace(',','.'))||0) };
+            }
         });
         return res;
     }
 
     function initDashboard() {
-        const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)]))
-                          .filter(k => {
-                              const s = sunStore[k], w = wpStore[k];
-                              return (s && (s.self + s.feed > 0)) || (w && w.elec > 0);
-                          }).sort();
-        
+        const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).filter(k => sunStore[k] || wpStore[k]).sort();
         const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
         const tb = document.getElementById('tabBar'); tb.innerHTML = '';
         const addBtn = (l, m, y='') => {
@@ -125,21 +110,16 @@
     function render(allKeys) {
         let keys = currentMode === 'Year' ? allKeys.filter(k => k.startsWith(selectedYear)) : allKeys;
         const data = keys.map(k => {
-            const s = sunStore[k] || {grid:0, self:0, feed:0}, w = wpStore[k] || {elec:0, heat:0};
-            return { k, ...s, ...w, pvGen: s.self + s.feed };
+            const s = sunStore[k] || {grid:0, self:0, feed:0, prod:0}, w = wpStore[k] || {elec:0};
+            return { k, ...s, ...w };
         });
 
-        const tG = data.reduce((a,b)=>a+b.grid,0), tS = data.reduce((a,b)=>a+b.self,0), tF = data.reduce((a,b)=>a+b.feed,0), tP = data.reduce((a,b)=>a+b.pvGen,0);
-        document.getElementById('txtAutarky').innerText = (tG+tS > 0 ? (tS/(tG+tS)*100).toFixed(1) : "-") + "%";
-        document.getElementById('txtPvTotal').innerText = tP.toFixed(0) + " kWh";
-        document.getElementById('txtGridTotal').innerText = tG.toFixed(0) + " kWh";
-        const wActive = data.filter(d => d.heat > 0);
-        document.getElementById('txtJaz').innerText = wActive.length ? (wActive.reduce((a,b)=>a+b.heat,0)/wActive.reduce((a,b)=>a+b.elec,0)).toFixed(2) : "-";
+        const tG = data.reduce((a,b)=>a+b.grid,0), tS = data.reduce((a,b)=>a+b.self,0), tF = data.reduce((a,b)=>a+b.feed,0), tP = data.reduce((a,b)=>a+b.prod,0);
 
         Object.values(charts).forEach(c => c?.destroy());
         const o = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom' } } };
 
-        charts.ds = new Chart(document.getElementById('donutSources'), { type:'doughnut', data:{labels:['PV Eigenstrom','Netzbezug'],datasets:[{data:[tS,tG],backgroundColor:['#2ecc71','#e74c3c']}]}, options:o });
+        charts.ds = new Chart(document.getElementById('donutSources'), { type:'doughnut', data:{labels:['Eigenstrom','Netz'],datasets:[{data:[tS,tG],backgroundColor:['#2ecc71','#e74c3c']}]}, options:o });
         charts.du = new Chart(document.getElementById('donutUsage'), { type:'doughnut', data:{labels:['Eigenverbrauch','Einspeisung'],datasets:[{data:[tS,tF],backgroundColor:['#2ecc71','#e67e22']}]}, options:o });
 
         charts.main = new Chart(document.getElementById('chartMain'), {
@@ -147,14 +127,14 @@
             data: {
                 labels: keys,
                 datasets: [
-                    { label: 'PV Erzeugung', data: data.map(d=>d.pvGen), backgroundColor: '#f1c40f', stack: 'B1' },
-                    { label: 'Einspeisung', data: data.map(d=>d.feed), backgroundColor: '#e67e22', stack: 'B2' },
-                    { label: 'PV-Eigenstrom (Haus+WP)', data: data.map(d=>d.self), backgroundColor: '#2ecc71', stack: 'B3' },
+                    { label: 'PV Erzeugung (Dach)', data: data.map(d=>d.prod), backgroundColor: '#f1c40f', stack: 'B1' },
+                    { label: 'Einspeisung (Netz)', data: data.map(d=>d.feed), backgroundColor: '#e67e22', stack: 'B2' },
+                    { label: 'Eigenverbrauch (PV)', data: data.map(d=>d.self), backgroundColor: '#2ecc71', stack: 'B3' },
                     { label: 'Netzbezug', data: data.map(d=>d.grid), backgroundColor: '#e74c3c', stack: 'B3' },
                     { label: 'Wärmepumpe (Total)', data: data.map(d=>d.elec), backgroundColor: '#9b59b6', stack: 'B4' }
                 ]
             },
-            options: { ...o, scales: { x: { stacked: false }, y: { stacked: true } } }
+            options: { ...o, scales: { y: { stacked: true } } }
         });
     }
 </script>

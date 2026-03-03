@@ -2,30 +2,23 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor Pro - Einspeisung & Filter Fix</title>
+    <title>Energie-Monitor Pro - Februar Fix</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
         :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --bg: #f4f7f6; }
         body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
         .container { max-width: 1400px; margin: auto; }
-        
         .tabs-container { display: flex; flex-direction: column; align-items: center; gap: 10px; margin-bottom: 20px; }
         .tabs { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
         .tab-btn { padding: 10px 18px; border-radius: 8px; border: 1px solid #ccc; background: #eee; cursor: pointer; font-weight: bold; }
         .tab-btn.active { background: #3498db; color: white; border-color: #2980b9; }
         .custom-btn { background: #2c3e50; color: white; }
-
-        #rangeSelector { 
-            background: #fff; padding: 12px; border-radius: 10px; display: none; 
-            justify-content: center; align-items: center; gap: 15px; border: 1px solid #3498db;
-        }
-        
+        #rangeSelector { background: #fff; padding: 12px; border-radius: 10px; display: none; justify-content: center; align-items: center; gap: 15px; border: 1px solid #3498db; }
         .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px; }
         .stat-card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; border-bottom: 4px solid #ddd; }
         .stat-card h3 { font-size: 0.7em; text-transform: uppercase; color: #7f8c8d; margin: 0; }
         .stat-card p { margin: 5px 0 0; font-size: 1.1em; font-weight: bold; }
-        
         .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: 480px; }
         .upload-area { background: #fff; padding: 15px; border-radius: 12px; text-align: center; margin-bottom: 15px; border: 2px dashed #3498db; }
         .controls { background: #fff; padding: 12px; border-radius: 12px; margin-bottom: 15px; display: flex; justify-content: center; gap: 20px; font-size: 0.9em; }
@@ -39,7 +32,7 @@
     
     <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <p id="statusLine" style="margin:5px 0; font-size:0.8em;">solar.csv (Sunsaver) & wp.csv laden</p>
+        <p id="statusLine" style="margin:5px 0; font-size:0.8em; color: #3498db;">Dateien solar.csv und wp.csv auswählen...</p>
     </div>
 
     <div class="controls">
@@ -50,6 +43,7 @@
     <div class="tabs-container">
         <div class="tabs" id="tabBar">
             <button class="tab-btn active" onclick="changeMode('All', '', this)">Gesamt</button>
+            <span id="yearButtons"></span>
             <button class="tab-btn custom-btn" id="btnCustom" onclick="changeMode('Custom', '', this)">📅 Benutzerdefiniert</button>
         </div>
         <div id="rangeSelector">
@@ -78,19 +72,19 @@
     window.onload = () => {
         document.getElementById('inpPrice').value = localStorage.getItem('energy_price') || "28.00";
         document.getElementById('inpBase').value = localStorage.getItem('energy_base') || "10.83";
-        // Auto-fetch falls vorhanden
-        Promise.all([
-            fetch('solar.csv').then(r => r.ok ? r.text() : null).catch(() => null),
-            fetch('wp.csv').then(r => r.ok ? r.text() : null).catch(() => null)
-        ]).then(([s, w]) => { if(s) sunStore = parseSolar(s); if(w) wpStore = parseWP(w); updateUI(); });
     };
 
     function parseSolar(csv) {
         const data = {};
         const rows = Papa.parse(csv, {header: true, skipEmptyLines: true}).data;
         rows.forEach(r => {
-            const t = (r.Time || r.time || "").substring(0, 7);
-            if(t.length < 7) return;
+            let tRaw = r.Time || r.time || "";
+            if(!tRaw) return;
+            // Robustes Datum-Parsing: Extrahiert YYYY-MM unabhängig von der Länge des restlichen Strings
+            const match = tRaw.match(/(\d{4}-\d{2})/);
+            if(!match) return;
+            const t = match[1];
+
             if(!data[t]) data[t] = { pv: 0, feed: 0, grid: 0, self: 0 };
             
             const p2s = parseFloat(r.PvToSite) || 0, p2g = parseFloat(r.PvToGrid) || 0, p2b = parseFloat(r.PvToBattery) || 0;
@@ -98,7 +92,7 @@
             const g2s = parseFloat(r.GridToSite) || 0, g2b = parseFloat(r.GridToBattery) || 0;
 
             data[t].pv += (p2s + p2g + p2b);
-            data[t].feed += (p2g + b2g); // WICHTIG: Summiert beides für Februar & Sommer
+            data[t].feed += (p2g + b2g);
             data[t].grid += (g2s + g2b);
             data[t].self += (p2s + b2s);
         });
@@ -134,17 +128,14 @@
         if(keys.length === 0) return;
 
         const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
-        const bar = document.getElementById('tabBar');
-        const customBtn = document.getElementById('btnCustom');
-        
-        // Entferne alte Jahr-Buttons
-        Array.from(bar.querySelectorAll('.year-btn')).forEach(n => n.remove());
+        const yearSpan = document.getElementById('yearButtons');
+        yearSpan.innerHTML = '';
         
         years.forEach(y => {
             const b = document.createElement('button');
-            b.innerText = y; b.className = 'tab-btn year-btn';
+            b.innerText = y; b.className = 'tab-btn';
             b.onclick = () => changeMode('Year', y, b);
-            bar.insertBefore(b, customBtn);
+            yearSpan.appendChild(b);
         });
 
         const sS = document.getElementById('selectStart'), sE = document.getElementById('selectEnd');
@@ -194,7 +185,7 @@
                 labels: keys,
                 datasets: [
                     { label: 'PV Erzeugung', data: dSet.map(d => d.s.pv), backgroundColor: '#f1c40f' },
-                    { label: 'Eigenverbrauch', data: dSet.map(d => d.s.self), backgroundColor: '#2ecc71' },
+                    { label: 'Eigenbedarf', data: dSet.map(d => d.s.self), backgroundColor: '#2ecc71' },
                     { label: 'Netzbezug', data: dSet.map(d => d.s.grid), backgroundColor: '#e74c3c' },
                     { label: 'Wärmepumpe', data: dSet.map(d => d.w.elec), backgroundColor: '#9b59b6' },
                     { label: 'Einspeisung', data: dSet.map(d => d.s.feed), backgroundColor: '#e67e22' }
@@ -217,7 +208,6 @@
             reader.readAsText(f);
         });
     };
-    document.getElementById('inpPrice').oninput = document.getElementById('inpBase').oninput = render;
 </script>
 </body>
 </html>

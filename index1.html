@@ -2,31 +2,25 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Fix</title>
+    <title>Energie-Monitor - Farbfix</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
-        :root { 
-            --pv-direct: #f1c40f; --pv-batt: #f39c12; --pv-grid: #e67e22; 
-            --batt-grid: #d35400; --batt-site: #2ecc71; --pv-site: #27ae60;
-            --grid-site: #e74c3c; --wp: #9b59b6; --bg: #f4f7f6; 
-        }
-        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f4f7f6; padding: 20px; color: #2c3e50; }
         .container { max-width: 1600px; margin: auto; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }
-        .tab-btn { padding: 10px 20px; border-radius: 8px; border: none; background: #ddd; cursor: pointer; font-weight: bold; transition: 0.3s; }
-        .tab-btn.active { background: #3498db; color: white; box-shadow: 0 4px 10px rgba(52, 152, 219, 0.3); }
-        .range-picker { background: #fff; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: none; justify-content: center; align-items: center; gap: 20px; flex-wrap: wrap; box-shadow: 0 2px 5px rgba(0,0,0,0.05); border: 1px solid #e0e0e0; }
-        .range-picker.visible { display: flex; }
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
+        .tab-btn { padding: 10px 20px; border-radius: 8px; border: none; background: #ddd; cursor: pointer; font-weight: bold; }
+        .tab-btn.active { background: #3498db; color: white; }
+        .range-picker { background: #fff; padding: 15px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: center; align-items: center; gap: 20px; box-shadow: 0 2px 5px rgba(0,0,0,0.05); }
         .input-group { display: flex; align-items: center; gap: 8px; font-size: 0.9em; font-weight: bold; }
-        select, input { padding: 8px; border-radius: 5px; border: 1px solid #ccc; font-family: inherit; width: 100px; }
+        input { padding: 8px; border-radius: 5px; border: 1px solid #ccc; width: 80px; }
         .stats-grid { display: grid; grid-template-columns: repeat(9, 1fr); gap: 8px; margin-bottom: 25px; }
         .stat-card { background: white; padding: 12px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); text-align: center; border-bottom: 4px solid #ddd; }
-        .stat-card h3 { font-size: 0.65em; text-transform: uppercase; color: #7f8c8d; margin: 0; white-space: nowrap; }
-        .stat-card p { margin: 8px 0 0; font-size: 1.05em; font-weight: bold; line-height: 1.2; }
-        .sub-val { display: block; font-size: 0.75em; color: #7f8c8d; font-weight: normal; margin-top: 4px; }
-        .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); margin-bottom: 20px; }
-        .main-chart-container { height: 500px; position: relative; }
+        .stat-card h3 { font-size: 0.65em; text-transform: uppercase; color: #7f8c8d; margin: 0; }
+        .stat-card p { margin: 8px 0 0; font-size: 1.05em; font-weight: bold; }
+        .sub-val { display: block; font-size: 0.75em; color: #7f8c8d; font-weight: normal; }
+        .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 10px rgba(0,0,0,0.1); }
+        .main-chart-container { height: 500px; }
         .upload-area { background: #fff; padding: 20px; border-radius: 12px; text-align: center; margin-bottom: 20px; border: 3px dashed #3498db; }
     </style>
 </head>
@@ -37,15 +31,12 @@
     
     <div class="upload-area">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <div id="statusLine" style="margin-top:10px; font-weight:bold; color: #3498db;">Daten hochladen...</div>
+        <div style="margin-top:10px; font-weight:bold; color: #3498db;">Daten hochladen...</div>
     </div>
 
     <div id="tabBar" class="tabs"></div>
 
-    <div id="rangeSelector" class="range-picker">
-        <div class="input-group">Von: <select id="selectStart"></select></div>
-        <div class="input-group">Bis: <select id="selectEnd"></select></div>
-        <div style="width: 2px; height: 30px; background: #eee;"></div>
+    <div class="range-picker">
         <div class="input-group">Preis (ct/kWh): <input type="number" id="inpPrice" step="0.01"></div>
         <div class="input-group">Grundgebühr (€): <input type="number" id="inpBase" step="0.01"></div>
     </div>
@@ -54,37 +45,34 @@
         <div class="stat-card" style="border-color: #2ecc71"><h3>Autarkie</h3><p id="txtAutarky">-</p></div>
         <div class="stat-card" style="border-color: #e67e22"><h3>JAZ (Ø)</h3><p id="txtJaz">-</p></div>
         <div class="stat-card" style="border-color: #2980b9"><h3>PV Nutzung</h3><p id="txtPvUsagePct">-</p></div>
-        <div class="stat-card" style="border-color: var(--pv-direct)"><h3>PV Erzeugung</h3><p id="txtPvTotal">-</p></div>
-        <div class="stat-card" style="border-color: var(--pv-site)"><h3>PV Eigenbedarf</h3><p id="txtPvSelfTotal">-</p></div>
-        <div class="stat-card" style="border-color: var(--wp)"><h3>WP Strom</h3><p id="txtWpTotal">-</p></div>
-        <div class="stat-card" style="border-color: var(--grid-site)"><h3>Netzbezug</h3><p id="txtGridTotal">-</p></div>
-        <div class="stat-card" style="border-color: var(--pv-grid)"><h3>Einspeisung</h3><p id="txtFeedTotal">-</p></div>
+        <div class="stat-card" style="border-color: #f1c40f"><h3>PV Erzeugung</h3><p id="txtPvTotal">-</p></div>
+        <div class="stat-card" style="border-color: #27ae60"><h3>PV Eigenbedarf</h3><p id="txtPvSelfTotal">-</p></div>
+        <div class="stat-card" style="border-color: #9b59b6"><h3>WP Strom</h3><p id="txtWpTotal">-</p></div>
+        <div class="stat-card" style="border-color: #e74c3c"><h3>Netzbezug</h3><p id="txtGridTotal">-</p></div>
+        <div class="stat-card" style="border-color: #e67e22"><h3>Einspeisung</h3><p id="txtFeedTotal">-</p></div>
         <div class="stat-card" style="border-color: #2c3e50"><h3>Saldo (€)</h3><p id="txtSaldo">-</p></div>
     </div>
 
     <div class="chart-card">
-        <h2>Energiefluss-Details (kWh)</h2>
         <div class="main-chart-container"><canvas id="chartMain"></canvas></div>
     </div>
 </div>
 
 <script>
-    const DEFAULT_PREIS = 0.293; const DEFAULT_GG = 10.83; const VERGUETUNG_PV = 0.0795;
+    const COLORS = {
+        pvDirect: '#f1c40f', pvBatt: '#f39c12', pvGrid: '#e67e22',
+        battGrid: '#d35400', battSite: '#2ecc71', pvSite: '#27ae60',
+        gridSite: '#e74c3c', wp: '#9b59b6'
+    };
+    
+    const VERGUETUNG_PV = 0.0795;
     let sunStore = {}, wpStore = {}, charts = {};
     let currentMode = 'All', selectedYear = '';
 
     window.onload = () => {
-        document.getElementById('inpPrice').value = localStorage.getItem('cfg_p') || (DEFAULT_PREIS * 100).toFixed(2);
-        document.getElementById('inpBase').value = localStorage.getItem('cfg_b') || DEFAULT_GG.toFixed(2);
-
-        ['solar.csv', 'wp.csv'].forEach(file => {
-            fetch(file).then(r => r.ok ? r.text() : null).then(text => {
-                if(text) {
-                    if (text.includes("PvToSite")) sunStore = parseSun(text); else wpStore = parseWp(text);
-                    initDashboard();
-                }
-            });
-        });
+        document.getElementById('inpPrice').value = localStorage.getItem('cfg_p') || "29.30";
+        document.getElementById('inpBase').value = localStorage.getItem('cfg_b') || "10.83";
+        render();
     };
 
     function parseWp(csvText) {
@@ -95,7 +83,7 @@
                 let key = row[1];
                 if (key.includes(".")) { const p = key.split("."); key = `${p[p.length-1]}-${p[p.length-2].padStart(2, '0')}`; }
                 const h = cleanNum(row[7]), m = cleanNum(row[12]), r = cleanNum(row[17]);
-                if (m+r > 0 || h > 0) monthly[key] = { elec: (m + r), heat: (h+m+r), hasHeat: h > 0.5 };
+                monthly[key] = { elec: (m + r), heat: (h+m+r), hasHeat: h > 0.5 };
             }
         });
         return monthly;
@@ -115,110 +103,80 @@
             monthly[key].b2g += parseFloat(row.BatteryToGrid) || 0;
             monthly[key].b2s += parseFloat(row.BatteryToSite) || 0;
             monthly[key].g2s += parseFloat(row.GridToSite) || 0;
-            monthly[key].g2b += parseFloat(row.GridToBattery) || 0;
         });
         return monthly;
     }
 
-    function cleanNum(val) { if (!val || val === "-" || val === "") return 0; let s = val.toString().replace(/\./g, '').replace(',', '.'); return parseFloat(s) || 0; }
+    function cleanNum(val) { if (!val || val === "-") return 0; return parseFloat(val.toString().replace(/\./g, '').replace(',', '.')) || 0; }
 
     function initDashboard() {
         const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         if (keys.length === 0) return;
-        
         const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
         const tabBar = document.getElementById('tabBar');
         tabBar.innerHTML = '';
-        
         const createBtn = (label, mode, yr = '') => {
             const btn = document.createElement('button');
             btn.innerText = label;
             btn.className = 'tab-btn' + (currentMode === mode && yr === selectedYear ? ' active' : '');
-            btn.onclick = () => { currentMode = mode; selectedYear = yr; updateTabStyles(); render(); };
+            btn.onclick = () => { currentMode = mode; selectedYear = yr; render(); };
             tabBar.appendChild(btn);
         }
         createBtn('Gesamt', 'All');
         years.forEach(y => createBtn(y, 'Year', y));
-        
         render();
-    }
-
-    function updateTabStyles() {
-        document.querySelectorAll('.tab-btn').forEach(b => {
-            const isActive = (b.innerText === 'Gesamt' && currentMode === 'All') || (b.innerText === selectedYear && currentMode === 'Year');
-            b.classList.toggle('active', isActive);
-        });
     }
 
     function render() {
         let keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         if (currentMode === 'Year') keys = keys.filter(k => k.startsWith(selectedYear));
+        if (keys.length === 0) return;
 
-        const priceToUse = parseFloat(document.getElementById('inpPrice').value) / 100 || DEFAULT_PREIS;
-        const baseToUse = parseFloat(document.getElementById('inpBase').value) || DEFAULT_GG;
+        const price = parseFloat(document.getElementById('inpPrice').value) / 100;
+        const base = parseFloat(document.getElementById('inpBase').value);
 
         const data = keys.map(m => {
             const wp = wpStore[m] || {elec:0, heat:0, hasHeat:false};
-            const s = sunStore[m] || {p2g:0, p2b:0, p2s:0, b2g:0, b2s:0, g2s:0, g2b:0};
-            return {
-                m,
-                pvGen: s.p2g + s.p2b + s.p2s,
-                selfUsed: s.p2s + s.b2s,
-                gridTotal: s.g2s + s.g2b,
-                feedTotal: s.p2g + s.b2g,
-                totalNeed: s.p2s + s.b2s + s.g2s, // Was das Haus + Akku wirklich verbraucht haben
-                ...wp, ...s
-            };
+            const s = sunStore[m] || {p2g:0, p2b:0, p2s:0, b2g:0, b2s:0, g2s:0};
+            return { m, ...s, ...wp, pvGen: s.p2g + s.p2b + s.p2s, self: s.p2s + s.b2s, need: s.p2s + s.b2s + s.g2s };
         });
 
-        // Summen für Stats
-        const sumPv = data.reduce((a,b)=>a+b.pvGen,0);
-        const sumSelf = data.reduce((a,b)=>a+b.selfUsed,0);
-        const sumGrid = data.reduce((a,b)=>a+b.gridTotal,0);
-        const sumFeed = data.reduce((a,b)=>a+b.feedTotal,0);
-        const sumWp = data.reduce((a,b)=>a+b.elec,0);
-        const sumHeat = data.reduce((a,b)=>a+b.heat,0);
-        const sumNeed = data.reduce((a,b)=>a+b.totalNeed,0);
+        // Stats Update
+        const sPv = data.reduce((a,b)=>a+b.pvGen,0), sSelf = data.reduce((a,b)=>a+b.self,0), sGrid = data.reduce((a,b)=>a+b.g2s,0);
+        const sFeed = data.reduce((a,b)=>a+(b.p2g + b.b2g),0), sWp = data.reduce((a,b)=>a+b.elec,0);
+        const cost = sGrid * price + (keys.length * base), earn = sFeed * VERGUETUNG_PV;
 
-        const gridCost = sumGrid * priceToUse + (keys.length * baseToUse);
-        const feedMoney = sumFeed * VERGUETUNG_PV;
+        document.getElementById('txtPvTotal').innerText = sPv.toFixed(0) + " kWh";
+        document.getElementById('txtPvSelfTotal').innerText = sSelf.toFixed(0) + " kWh";
+        document.getElementById('txtWpTotal').innerText = sWp.toFixed(0) + " kWh";
+        document.getElementById('txtGridTotal').innerHTML = `${sGrid.toFixed(0)} kWh <span class="sub-val">${cost.toFixed(2)}€</span>`;
+        document.getElementById('txtFeedTotal').innerHTML = `${sFeed.toFixed(0)} kWh <span class="sub-val">${earn.toFixed(2)}€</span>`;
+        document.getElementById('txtSaldo').innerText = (cost - earn).toFixed(2) + " €";
+        document.getElementById('txtAutarky').innerText = (sSelf/(sSelf+sGrid)*100).toFixed(1) + "%";
+        document.getElementById('txtPvUsagePct').innerText = (sSelf/sPv*100).toFixed(1) + "%";
+        document.getElementById('txtJaz').innerText = sWp > 0 ? (data.reduce((a,b)=>a+b.heat,0)/sWp).toFixed(2) : "-";
 
-        // Anzeige Stats
-        document.getElementById('txtPvTotal').innerText = sumPv.toFixed(0) + " kWh";
-        document.getElementById('txtPvSelfTotal').innerText = sumSelf.toFixed(0) + " kWh";
-        document.getElementById('txtWpTotal').innerText = sumWp.toFixed(0) + " kWh";
-        document.getElementById('txtGridTotal').innerHTML = `${sumGrid.toFixed(0)} kWh <span class="sub-val">(${gridCost.toFixed(2)} €)</span>`;
-        document.getElementById('txtFeedTotal').innerHTML = `${sumFeed.toFixed(0)} kWh <span class="sub-val">(${feedMoney.toFixed(2)} €)</span>`;
-        document.getElementById('txtSaldo').innerHTML = `${(gridCost - feedMoney).toFixed(2)} € <span class="sub-val">Netto</span>`;
-        document.getElementById('txtAutarky').innerText = sumNeed > 0 ? (sumSelf/sumNeed*100).toFixed(1)+"%" : "-";
-        document.getElementById('txtPvUsagePct').innerText = sumPv > 0 ? (sumSelf/sumPv*100).toFixed(1)+"%" : "-";
-        document.getElementById('txtJaz').innerText = sumWp > 0 ? (sumHeat/sumWp).toFixed(2) : "-";
-
-        // Chart
-        Object.values(charts).forEach(c => { if(c) c.destroy(); });
+        if(charts.main) charts.main.destroy();
         charts.main = new Chart(document.getElementById('chartMain'), {
             type: 'bar',
             data: {
                 labels: keys,
                 datasets: [
-                    { label: 'PV -> Netz', data: data.map(d=>d.p2g), backgroundColor: 'var(--pv-grid)', stack: '0' },
-                    { label: 'PV -> Batterie', data: data.map(d=>d.p2b), backgroundColor: 'var(--pv-batt)', stack: '0' },
-                    { label: 'PV -> Haus', data: data.map(d=>d.p2s), backgroundColor: 'var(--pv-direct)', stack: '0' },
-                    
-                    { label: 'Einspeisung (PV)', data: data.map(d=>d.p2g), backgroundColor: 'rgba(230, 126, 34, 0.4)', stack: '1' },
-                    { label: 'Einspeisung (Akku)', data: data.map(d=>d.b2g), backgroundColor: 'var(--batt-grid)', stack: '1' },
-                    
-                    { label: 'Haus (PV)', data: data.map(d=>d.p2s), backgroundColor: 'var(--pv-site)', stack: '2' },
-                    { label: 'Haus (Akku)', data: data.map(d=>d.b2s), backgroundColor: 'var(--batt-site)', stack: '2' },
-                    { label: 'Haus (Netz)', data: data.map(d=>d.g2s), backgroundColor: 'var(--grid-site)', stack: '2' },
-                    
-                    { label: 'Wärmepumpe', data: data.map(d=>d.elec), backgroundColor: 'var(--wp)', stack: '3' }
+                    { label: 'PV->Netz', data: data.map(d=>d.p2g), backgroundColor: COLORS.pvGrid, stack: '0' },
+                    { label: 'PV->Batt', data: data.map(d=>d.p2b), backgroundColor: COLORS.pvBatt, stack: '0' },
+                    { label: 'PV->Haus', data: data.map(d=>d.p2s), backgroundColor: COLORS.pvDirect, stack: '0' },
+                    { label: 'Feed(PV)', data: data.map(d=>d.p2g), backgroundColor: 'rgba(230, 126, 34, 0.4)', stack: '1' },
+                    { label: 'Feed(Akku)', data: data.map(d=>d.b2g), backgroundColor: COLORS.battGrid, stack: '1' },
+                    { label: 'Haus(PV)', data: data.map(d=>d.p2s), backgroundColor: COLORS.pvSite, stack: '2' },
+                    { label: 'Haus(Akku)', data: data.map(d=>d.b2s), backgroundColor: COLORS.battSite, stack: '2' },
+                    { label: 'Haus(Netz)', data: data.map(d=>d.g2s), backgroundColor: COLORS.gridSite, stack: '2' },
+                    { label: 'WP Strom', data: data.map(d=>d.elec), backgroundColor: COLORS.wp, stack: '3' }
                 ]
             },
             options: {
                 responsive: true, maintainAspectRatio: false,
                 scales: { x: { stacked: false }, y: { stacked: true } },
-                plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } } }
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }
             }
         });
     }
@@ -227,8 +185,7 @@
         Array.from(e.target.files).forEach(file => {
             const reader = new FileReader();
             reader.onload = (ev) => {
-                const text = ev.target.result;
-                if (text.includes("PvToSite")) sunStore = parseSun(text); else wpStore = parseWp(text);
+                if (ev.target.result.includes("PvToSite")) sunStore = parseSun(ev.target.result); else wpStore = parseWp(ev.target.result);
                 initDashboard();
             };
             reader.readAsText(file);
@@ -236,10 +193,7 @@
     };
 
     [document.getElementById('inpPrice'), document.getElementById('inpBase')].forEach(el => {
-        el.oninput = () => {
-            localStorage.setItem(el.id === 'inpPrice' ? 'cfg_p' : 'cfg_b', el.value);
-            render();
-        };
+        el.oninput = () => { localStorage.setItem(el.id==='inpPrice'?'cfg_p':'cfg_b', el.value); render(); };
     });
 </script>
 </body>

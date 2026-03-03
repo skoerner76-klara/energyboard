@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Einzel-Charts</title>
+    <title>Energie-Monitor - Spalten-Fix JAZ</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -28,7 +28,7 @@
 <div class="container">
     <div class="card" style="text-align: center; border: 2px dashed #3498db;">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <div id="status" style="margin-top:10px; font-weight:bold; color:#3498db;">Daten-Analyse bereit</div>
+        <div id="status" style="margin-top:10px; font-weight:bold; color:#3498db;">Daten-Sync aktiv (Auto-Load solar.csv/wp.csv)</div>
     </div>
 
     <div id="tabBar" class="tabs"></div>
@@ -48,14 +48,10 @@
     </div>
 
     <div class="charts-grid">
-        <div class="card full-chart"><h3>Energie-Flüsse (kWh)</h3><canvas id="chartMain"></canvas></div>
-        
+        <div class="card full-chart"><h3>Energie-Monitor (kWh)</h3><canvas id="chartMain"></canvas></div>
         <div class="card half-chart"><h3>Autarkie-Trend (%)</h3><canvas id="chartAutarkie"></canvas></div>
-        
         <div class="card half-chart"><h3>WP Effizienz (JAZ)</h3><canvas id="chartJaz"></canvas></div>
-        
         <div class="card full-chart"><h3>Außentemperatur (°C)</h3><canvas id="chartTemp"></canvas></div>
-
         <div class="card half-chart"><h3>PV Nutzung</h3><canvas id="chartPvDist"></canvas></div>
         <div class="card half-chart"><h3>Hausstrom Quellen</h3><canvas id="chartSource"></canvas></div>
     </div>
@@ -72,7 +68,7 @@
     };
 
     window.onload = () => {
-        ['solar.csv', 'wp.csv'].forEach(f => fetch(f).then(r => r.ok ? r.text() : null).then(t => { if(t) processCSV(t); }));
+        autoFetch();
         document.getElementById('fileInput').onchange = e => {
             Array.from(e.target.files).forEach(f => {
                 const r = new FileReader();
@@ -83,6 +79,12 @@
         document.getElementById('selStart').onchange = render;
         document.getElementById('selEnd').onchange = render;
     };
+
+    async function autoFetch() {
+        ['solar.csv', 'wp.csv'].forEach(async f => {
+            try { const r = await fetch(f); if(r.ok) processCSV(await r.text()); } catch(e){}
+        });
+    }
 
     function processCSV(csv) {
         if (csv.includes("PvToSite")) {
@@ -99,15 +101,24 @@
                 sunStore[m].g2s += parseFloat(row.GridToSite) || 0;
             });
         } else {
+            // Angepasst an deinen Screenshot (Index-basiert)
             const rows = Papa.parse(csv, { delimiter: ";", skipEmptyLines: true }).data;
             rows.forEach(row => {
-                if (row[0]?.toString().toLowerCase() === "monat") {
-                    let m = row[1];
-                    if (m.includes(".")) { const p = m.split("."); m = `${p[2]}-${p[1].padStart(2, '0')}`; }
-                    const e = parseFloat(row[12]?.toString().replace(',','.')) || 0;
-                    const h = parseFloat(row[7]?.toString().replace(',','.')) || 0;
-                    const t = parseFloat(row[3]?.toString().replace(',','.')) || 0;
-                    if (e > 0 || h > 0) wpStore[m] = { elec: e, heat: h, temp: t };
+                // Zeitstempel steht in Spalte 2 (Index 1) z.B. 2026-02-19...
+                const dateStr = row[1] || "";
+                if (dateStr.length >= 7 && dateStr.includes("-")) {
+                    const m = dateStr.substring(0, 7);
+                    if (!wpStore[m]) wpStore[m] = { elec: 0, heat: 0, tempSum: 0, count: 0 };
+                    
+                    // Spalte 3: Wärme | Spalte 18: Elektrisch | Spalte 23: Außenfühler
+                    const h = parseFloat(row[2]?.toString().replace(',','.')) || 0;
+                    const e = parseFloat(row[17]?.toString().replace(',','.')) || 0;
+                    const t = parseFloat(row[22]?.toString().replace(',','.')) || 0;
+
+                    wpStore[m].heat += h;
+                    wpStore[m].elec += e;
+                    wpStore[m].tempSum += t;
+                    wpStore[m].count++;
                 }
             });
         }
@@ -117,6 +128,7 @@
 
     function updateTabs() {
         const allMonths = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
+        if (allMonths.length === 0) return;
         const years = ['Gesamt', ...new Set(allMonths.map(m => m.substring(0, 4))), 'Benutzerdefiniert'];
         const tabBar = document.getElementById('tabBar');
         tabBar.innerHTML = '';
@@ -146,10 +158,16 @@
         let sPv=0, sWp=0, sGrid=0, sFeed=0, sHeat=0, sSelf=0;
         const data = filtered.map(m => {
             const s = sunStore[m] || { p2g:0, p2b:0, p2s:0, b2g:0, b2s:0, g2s:0 };
-            const w = wpStore[m] || { elec:0, heat:0, temp:0 };
+            const w = wpStore[m] || { elec:0, heat:0, tempSum:0, count:1 };
             sPv += (s.p2g + s.p2b + s.p2s); sWp += w.elec; sGrid += s.g2s;
             sFeed += (s.p2g + s.b2g); sSelf += (s.p2s + s.b2s); sHeat += w.heat;
-            return { m, ...s, wpE: w.elec, jaz: w.elec > 0 ? w.heat/w.elec : 0, temp: w.temp, aut: (s.p2s+s.b2s+s.g2s)>0 ? ((s.p2s+s.b2s)/(s.p2s+s.b2s+s.g2s)*100) : 0 };
+            
+            return { 
+                m, ...s, wpE: w.elec, 
+                jaz: (w.elec > 0) ? (w.heat / w.elec) : 0, 
+                temp: w.tempSum / w.count, 
+                aut: (s.p2s+s.b2s+s.g2s)>0 ? ((s.p2s+s.b2s)/(s.p2s+s.b2s+s.g2s)*100) : 0 
+            };
         });
 
         document.getElementById('txtAut').innerText = (sSelf+sGrid) > 0 ? (sSelf/(sSelf+sGrid)*100).toFixed(1) + "%" : "-";
@@ -185,18 +203,18 @@
         charts.autarkie = new Chart(document.getElementById('chartAutarkie'), {
             type: 'line',
             data: { labels: labels, datasets: [{ label: 'Autarkie %', data: data.map(d=>d.aut), borderColor: COLORS.aut, tension: 0.3 }] },
-            options: cfg
+            options: { ...cfg, scales: { y: { min: 0, max: 100 } } }
         });
 
         charts.jaz = new Chart(document.getElementById('chartJaz'), {
             type: 'bar',
             data: { labels: labels, datasets: [{ label: 'Monats-JAZ', data: data.map(d=>d.jaz), backgroundColor: COLORS.jaz }] },
-            options: { ...cfg, scales: { y: { min: 0, max: 6 } } }
+            options: { ...cfg, scales: { y: { min: 0, suggestedMax: 5 } } }
         });
 
         charts.temp = new Chart(document.getElementById('chartTemp'), {
             type: 'line',
-            data: { labels: labels, datasets: [{ label: 'Außentemperatur °C', data: data.map(d=>d.temp), borderColor: COLORS.temp, backgroundColor: 'rgba(52, 152, 219, 0.1)', fill: true }] },
+            data: { labels: labels, datasets: [{ label: 'Außentemperatur °C', data: data.map(d=>d.temp), borderColor: COLORS.temp, fill: true, backgroundColor: 'rgba(52, 152, 219, 0.1)' }] },
             options: cfg
         });
 

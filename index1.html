@@ -2,180 +2,199 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor Fix</title>
+    <title>Energie-Monitor Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #f4f7f6; padding: 20px; color: #2c3e50; }
-        .container { max-width: 1000px; margin: auto; background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
-        .upload-section { border: 2px dashed #3498db; padding: 20px; text-align: center; margin-bottom: 20px; }
-        .stats { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
-        .card { flex: 1; min-width: 120px; background: #eee; padding: 10px; border-radius: 8px; text-align: center; }
-        .card h3 { font-size: 0.8rem; margin: 0; color: #666; }
-        .card p { font-size: 1.2rem; font-weight: bold; margin: 5px 0 0; }
-        .chart-box { height: 400px; position: relative; }
-        .controls { display: flex; justify-content: center; gap: 10px; margin-bottom: 20px; }
-        .btn { padding: 8px 15px; cursor: pointer; border: 1px solid #ccc; background: #f9f9f9; border-radius: 5px; }
-        .btn.active { background: #3498db; color: white; border-color: #2980b9; }
-        #customInputs { display: none; margin-top: 10px; text-align: center; }
+        :root { --pv: #f1c40f; --feedin: #e67e22; --house: #2ecc71; --wp: #9b59b6; --grid: #e74c3c; --bg: #f4f7f6; }
+        body { font-family: 'Segoe UI', sans-serif; background: var(--bg); padding: 20px; color: #2c3e50; }
+        .container { max-width: 1200px; margin: auto; }
+        
+        /* Tabs & Controls */
+        .controls-wrap { display: flex; flex-direction: column; align-items: center; gap: 15px; margin-bottom: 25px; }
+        .tabs { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+        .tab-btn { padding: 10px 18px; border-radius: 8px; border: 1px solid #ccc; background: #eee; cursor: pointer; font-weight: bold; }
+        .tab-btn.active { background: #3498db; color: white; border-color: #2980b9; }
+        .custom-btn { background: #2c3e50; color: white; }
+        
+        #rangeSelector { display: none; gap: 10px; background: white; padding: 15px; border-radius: 10px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        
+        /* Stats */
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; margin-bottom: 25px; }
+        .card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); text-align: center; border-bottom: 4px solid #ddd; }
+        .card h3 { font-size: 0.75rem; margin: 0; color: #7f8c8d; text-transform: uppercase; }
+        .card p { margin: 8px 0 0; font-size: 1.2rem; font-weight: bold; }
+        
+        .chart-card { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); height: 450px; }
+        .status-msg { text-align: center; font-size: 0.85rem; color: #3498db; margin-bottom: 10px; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h2 style="text-align:center">☀️ Solar-Analyse</h2>
+    <h1 style="text-align:center">☀️ Energie-Monitor Pro</h1>
+    <p id="status" class="status-msg">Suche solar.csv und wp.csv...</p>
 
-    <div class="upload-section">
-        <input type="file" id="csvFiles" multiple accept=".csv">
-        <p style="font-size: 0.9rem;">Wähle <b>solar.csv</b> und <b>wp.csv</b> aus.</p>
+    <div class="controls-wrap">
+        <div class="tabs" id="tabBar">
+            <button class="tab-btn active" onclick="setMode('All', '', this)">Gesamt</button>
+            <span id="yearButtons"></span>
+            <button class="tab-btn custom-btn" onclick="setMode('Custom', '', this)">📅 Zeitraum</button>
+        </div>
+
+        <div id="rangeSelector">
+            Von: <select id="selStart"></select> 
+            Bis: <select id="selEnd"></select>
+        </div>
     </div>
 
-    <div class="controls">
-        <button class="btn active" id="btnAll" onclick="updateView('All')">Gesamt</button>
-        <button class="btn" id="btnCustom" onclick="updateView('Custom')">📅 Zeitraum</button>
+    <div class="stats-grid">
+        <div class="card" style="border-color: var(--pv)"><h3>Erzeugung</h3><p id="txtPv">-</p></div>
+        <div class="card" style="border-color: var(--house)"><h3>Eigenbedarf</h3><p id="txtSelf">-</p></div>
+        <div class="card" style="border-color: var(--feedin)"><h3>Einspeisung</h3><p id="txtFeed">-</p></div>
+        <div class="card" style="border-color: var(--grid)"><h3>Netzbezug</h3><p id="txtGrid">-</p></div>
+        <div class="card" style="border-color: var(--wp)"><h3>WP Strom</h3><p id="txtWp">-</p></div>
+        <div class="card" style="border-color: #2c3e50"><h3>JAZ</h3><p id="txtJaz">-</p></div>
     </div>
 
-    <div id="customInputs">
-        Von: <select id="startMonth"></select> 
-        Bis: <select id="endMonth"></select>
-    </div>
-
-    <div class="stats">
-        <div class="card"><h3>Erzeugung</h3><p id="resPv">-</p></div>
-        <div class="card"><h3>Eigenbedarf</h3><p id="resSelf">-</p></div>
-        <div class="card"><h3>Einspeisung</h3><p id="resFeed">-</p></div>
-        <div class="card"><h3>WP Strom</h3><p id="resWp">-</p></div>
-    </div>
-
-    <div class="chart-box">
-        <canvas id="myChart"></canvas>
+    <div class="chart-card">
+        <canvas id="mainChart"></canvas>
     </div>
 </div>
 
 <script>
-    let sunData = {}, heatData = {}, mainChart = null;
-    let currentView = 'All';
+    let sunStore = {}, wpStore = {}, chart = null;
+    let currentMode = 'All', currentYear = '';
 
-    // Dateien einlesen
-    document.getElementById('csvFiles').onchange = function(e) {
-        const files = Array.from(e.target.files);
-        let loaded = 0;
-        files.forEach(file => {
-            const reader = new FileReader();
-            reader.onload = function(event) {
-                const text = event.target.result;
-                if (text.includes("PvToSite")) {
-                    parseSolar(text);
-                } else {
-                    parseHeat(text);
-                }
-                loaded++;
-                if (loaded === files.length) initUI();
-            };
-            reader.readAsText(file);
-        });
+    // Automatisches Laden beim Start
+    window.onload = async () => {
+        const loadFile = async (name) => {
+            try {
+                const res = await fetch(name);
+                return res.ok ? await res.text() : null;
+            } catch (e) { return null; }
+        };
+
+        const [solarTxt, wpTxt] = await Promise.all([loadFile('solar.csv'), loadFile('wp.csv')]);
+        
+        if (solarTxt) sunStore = parseSolar(solarTxt);
+        if (wpTxt) wpStore = parseWP(wpTxt);
+        
+        if (solarTxt || wpTxt) {
+            document.getElementById('status').innerText = "Daten erfolgreich geladen.";
+            initUI();
+        } else {
+            document.getElementById('status').innerText = "Fehler: solar.csv oder wp.csv nicht gefunden.";
+        }
     };
 
     function parseSolar(csv) {
+        const data = {};
         const rows = Papa.parse(csv, {header: true, skipEmptyLines: true}).data;
         rows.forEach(r => {
-            const dateStr = r.Time || r.time || "";
-            if (dateStr.length < 7) return;
-            const month = dateStr.substring(0, 7); // "2026-02"
+            const time = r.Time || r.time || "";
+            if (time.length < 7) return;
+            const m = time.substring(0, 7); // "2026-02"
             
-            if (!sunData[month]) sunData[month] = { pv: 0, feed: 0, grid: 0, self: 0 };
+            if (!data[m]) data[m] = { pv: 0, feed: 0, grid: 0, self: 0 };
             
-            const p2g = parseFloat(r.PvToGrid) || 0;
-            const b2g = parseFloat(r.BatteryToGrid) || 0;
-            const p2s = parseFloat(r.PvToSite) || 0;
-            const b2s = parseFloat(r.BatteryToSite) || 0;
+            const p2g = parseFloat(r.PvToGrid) || 0, b2g = parseFloat(r.BatteryToGrid) || 0;
+            const p2s = parseFloat(r.PvToSite) || 0, b2s = parseFloat(r.BatteryToSite) || 0;
             const p2b = parseFloat(r.PvToBattery) || 0;
-            const g2s = parseFloat(r.GridToSite) || 0;
-            const g2b = parseFloat(r.GridToBattery) || 0;
+            const g2s = parseFloat(r.GridToSite) || 0, g2b = parseFloat(r.GridToBattery) || 0;
 
-            sunData[month].pv += (p2s + p2g + p2b);
-            sunData[month].feed += (p2g + b2g); // Addiert beide für Februar-Korrektur
-            sunData[month].grid += (g2s + g2b);
-            sunData[month].self += (p2s + b2s);
+            data[m].pv += (p2s + p2g + p2b);
+            data[m].feed += (p2g + b2g); // Feb-Fix: Summe beider Einspeisequellen
+            data[m].grid += (g2s + g2b);
+            data[m].self += (p2s + b2s);
         });
+        return data;
     }
 
-    function parseHeat(csv) {
+    function parseWP(csv) {
+        const data = {};
         const rows = Papa.parse(csv.trim(), {delimiter: ";", skipEmptyLines: true}).data;
         rows.forEach(r => {
             if ((r[0]||"").toString().toLowerCase() === "monat") {
                 let m = r[1];
-                if(m.includes(".")) { 
-                    const p = m.split("."); 
-                    m = p[2] + "-" + p[1].padStart(2,'0'); 
-                }
+                if(m.includes(".")) { const p = m.split("."); m = `${p[2]}-${p[1].padStart(2,'0')}`; }
+                const heat = parseFloat(r[7]?.replace(/\./g, '').replace(',', '.')) || 0;
                 const elM = parseFloat(r[12]?.replace(/\./g, '').replace(',', '.')) || 0;
                 const elR = parseFloat(r[17]?.replace(/\./g, '').replace(',', '.')) || 0;
-                heatData[m] = { elec: elM + elR };
+                data[m] = { elec: elM + elR, heat: heat + elM + elR };
             }
         });
+        return data;
     }
 
     function initUI() {
-        const keys = Array.from(new Set([...Object.keys(sunData), ...Object.keys(heatData)])).sort();
-        const startSel = document.getElementById('startMonth');
-        const endSel = document.getElementById('endMonth');
-        startSel.innerHTML = ""; endSel.innerHTML = "";
+        const keys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
+        const years = Array.from(new Set(keys.map(k => k.split('-')[0]))).sort();
         
-        keys.forEach(k => {
-            startSel.add(new Option(k, k));
-            endSel.add(new Option(k, k));
+        const yearBtnSpan = document.getElementById('yearButtons');
+        yearBtnSpan.innerHTML = "";
+        years.forEach(y => {
+            const btn = document.createElement('button');
+            btn.className = 'tab-btn';
+            btn.innerText = y;
+            btn.onclick = () => setMode('Year', y, btn);
+            yearBtnSpan.appendChild(btn);
         });
-        endSel.selectedIndex = keys.length - 1;
-        
-        startSel.onchange = endSel.onchange = render;
+
+        const sS = document.getElementById('selStart'), sE = document.getElementById('selEnd');
+        sS.innerHTML = ""; sE.innerHTML = "";
+        keys.forEach(k => { sS.add(new Option(k, k)); sE.add(new Option(k, k)); });
+        sE.selectedIndex = keys.length - 1;
+        sS.onchange = sE.onchange = render;
         render();
     }
 
-    function updateView(v) {
-        currentView = v;
-        document.getElementById('btnAll').classList.toggle('active', v === 'All');
-        document.getElementById('btnCustom').classList.toggle('active', v === 'Custom');
-        document.getElementById('customInputs').style.display = (v === 'Custom' ? 'block' : 'none');
+    function setMode(m, y, btn) {
+        currentMode = m; currentYear = y;
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('rangeSelector').style.display = (m === 'Custom' ? 'flex' : 'none');
         render();
     }
 
     function render() {
-        const allKeys = Array.from(new Set([...Object.keys(sunData), ...Object.keys(heatData)])).sort();
+        const allKeys = Array.from(new Set([...Object.keys(sunStore), ...Object.keys(wpStore)])).sort();
         let keys = allKeys;
 
-        if (currentView === 'Custom') {
-            const start = document.getElementById('startMonth').value;
-            const end = document.getElementById('endMonth').value;
+        if (currentMode === 'Year') keys = allKeys.filter(k => k.startsWith(currentYear));
+        if (currentMode === 'Custom') {
+            const start = document.getElementById('selStart').value;
+            const end = document.getElementById('selEnd').value;
             keys = allKeys.filter(k => k >= start && k <= end);
         }
 
-        const stats = keys.map(k => ({
-            k,
-            s: sunData[k] || {pv:0, feed:0, self:0},
-            w: heatData[k] || {elec:0}
+        const dSet = keys.map(k => ({
+            k, s: sunStore[k] || {pv:0, feed:0, grid:0, self:0}, w: wpStore[k] || {elec:0, heat:0}
         }));
 
-        const total = stats.reduce((a, b) => ({
-            pv: a.pv+b.s.pv, self: a.self+b.s.self, feed: a.feed+b.s.feed, elec: a.elec+b.w.elec
-        }), {pv:0, self:0, feed:0, elec:0});
+        const t = dSet.reduce((a, b) => ({
+            pv: a.pv+b.s.pv, self: a.self+b.s.self, feed: a.feed+b.s.feed,
+            grid: a.grid+b.s.grid, elec: a.elec+b.w.elec, heat: a.heat+b.w.heat
+        }), {pv:0, self:0, feed:0, grid:0, elec:0, heat:0});
 
-        document.getElementById('resPv').innerText = total.pv.toFixed(0) + " kWh";
-        document.getElementById('resSelf').innerText = total.self.toFixed(0) + " kWh";
-        document.getElementById('resFeed').innerText = total.feed.toFixed(0) + " kWh";
-        document.getElementById('resWp').innerText = total.elec.toFixed(0) + " kWh";
+        document.getElementById('txtPv').innerText = Math.round(t.pv) + " kWh";
+        document.getElementById('txtSelf').innerText = Math.round(t.self) + " kWh";
+        document.getElementById('txtFeed').innerText = Math.round(t.feed) + " kWh";
+        document.getElementById('txtGrid').innerText = Math.round(t.grid) + " kWh";
+        document.getElementById('txtWp').innerText = Math.round(t.elec) + " kWh";
+        document.getElementById('txtJaz').innerText = t.elec > 0 ? (t.heat/t.elec).toFixed(2) : "-";
 
-        if (mainChart) mainChart.destroy();
-        const ctx = document.getElementById('myChart').getContext('2d');
-        mainChart = new Chart(ctx, {
+        if (chart) chart.destroy();
+        chart = new Chart(document.getElementById('mainChart'), {
             type: 'bar',
             data: {
                 labels: keys,
                 datasets: [
-                    { label: 'Erzeugung', data: stats.map(d => d.s.pv), backgroundColor: '#f1c40f' },
-                    { label: 'Eigenverbrauch', data: stats.map(d => d.s.self), backgroundColor: '#2ecc71' },
-                    { label: 'Wärmepumpe', data: stats.map(d => d.w.elec), backgroundColor: '#9b59b6' },
-                    { label: 'Einspeisung', data: stats.map(d => d.s.feed), backgroundColor: '#e67e22' }
+                    { label: 'Erzeugung', data: dSet.map(d => d.s.pv), backgroundColor: '#f1c40f' },
+                    { label: 'Eigenbedarf', data: dSet.map(d => d.s.self), backgroundColor: '#2ecc71' },
+                    { label: 'Netzbezug', data: dSet.map(d => d.s.grid), backgroundColor: '#e74c3c' },
+                    { label: 'Wärmepumpe', data: dSet.map(d => d.w.elec), backgroundColor: '#9b59b6' },
+                    { label: 'Einspeisung', data: dSet.map(d => d.s.feed), backgroundColor: '#e67e22' }
                 ]
             },
             options: { responsive: true, maintainAspectRatio: false }

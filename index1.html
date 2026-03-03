@@ -2,23 +2,24 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor Profi-Ansicht</title>
+    <title>Energie-Monitor - Auto-Load & Vier-Balken-Modell</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
-        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; padding: 20px; color: #333; }
+        body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; padding: 20px; color: #333; }
         .container { max-width: 1400px; margin: auto; }
-        .upload-section { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; text-align: center; border: 2px dashed #3498db; }
-        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin-bottom: 20px; }
+        .upload-section { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); margin-bottom: 20px; text-align: center; border: 2px dashed #3498db; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 10px; margin-bottom: 20px; }
         .stat-card { background: white; padding: 15px; border-radius: 12px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); text-align: center; border-bottom: 4px solid #ccc; }
         .stat-card h3 { font-size: 0.7rem; text-transform: uppercase; color: #666; margin: 0; }
         .stat-card p { font-size: 1.1rem; font-weight: bold; margin: 5px 0; }
         .chart-container { background: white; padding: 20px; border-radius: 15px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); height: 600px; }
-        .tabs { display: flex; gap: 10px; margin-bottom: 20px; justify-content: center; }
+        .tabs { display: flex; gap: 8px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }
         .tab-btn { padding: 8px 16px; border-radius: 20px; border: 1px solid #3498db; background: white; color: #3498db; cursor: pointer; font-weight: bold; }
         .tab-btn.active { background: #3498db; color: white; }
         .settings { display: flex; justify-content: center; gap: 20px; margin-bottom: 20px; background: #fff; padding: 10px; border-radius: 10px; font-size: 0.9rem; }
-        input { width: 70px; padding: 4px; border: 1px solid #ddd; border-radius: 4px; }
+        input[type="number"] { width: 70px; padding: 4px; border: 1px solid #ddd; border-radius: 4px; }
+        #statusInfo { font-size: 0.8rem; color: #27ae60; margin-top: 5px; font-weight: bold; }
     </style>
 </head>
 <body>
@@ -26,7 +27,7 @@
 <div class="container">
     <div class="upload-section">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <p style="margin: 10px 0 0 0; font-size: 0.9rem; color: #666;">Beide CSV-Dateien (Solar & WP) auswählen oder nacheinander hochladen.</p>
+        <div id="statusInfo">Suche nach solar.csv und wp.csv...</div>
     </div>
 
     <div id="tabBar" class="tabs"></div>
@@ -37,13 +38,14 @@
     </div>
 
     <div class="stats-grid">
-        <div class="stat-card" style="border-color: #2ecc71"><h3>Autarkie</h3><p id="txtAut">- %</p></div>
-        <div class="stat-card" style="border-color: #f1c40f"><h3>PV Erzeugung</h3><p id="txtPv">- kWh</p></div>
-        <div class="stat-card" style="border-color: #9b59b6"><h3>WP Strom</h3><p id="txtWp">- kWh</p></div>
-        <div class="stat-card" style="border-color: #e74c3c"><h3>Netzbezug</h3><p id="txtGrid">- kWh</p></div>
-        <div class="stat-card" style="border-color: #e67e22"><h3>Einspeisung</h3><p id="txtFeed">- kWh</p></div>
-        <div class="stat-card" style="border-color: #34495e"><h3>Saldo</h3><p id="txtSaldo">- €</p></div>
+        <div class="stat-card" style="border-color: #2ecc71"><h3>Autarkie</h3><p id="txtAut">-</p></div>
+        <div class="stat-card" style="border-color: #f1c40f"><h3>PV Erzeugung</h3><p id="txtPv">-</p></div>
+        <div class="stat-card" style="border-color: #9b59b6"><h3>WP Strom</h3><p id="txtWp">-</p></div>
+        <div class="stat-card" style="border-color: #e74c3c"><h3>Netzbezug</h3><p id="txtGrid">-</p></div>
+        <div class="stat-card" style="border-color: #e67e22"><h3>Einspeisung</h3><p id="txtFeed">-</p></div>
+        <div class="stat-card" style="border-color: #34495e"><h3>Saldo</h3><p id="txtSaldo">-</p></div>
         <div class="stat-card" style="border-color: #3498db"><h3>JAZ</h3><p id="txtJaz">-</p></div>
+        <div class="stat-card" style="border-color: #2980b9"><h3>PV Nutzung</h3><p id="txtPvUse">-</p></div>
     </div>
 
     <div class="chart-container">
@@ -54,8 +56,6 @@
 <script>
     let sunData = {}, wpData = {}, chart = null;
     let currentYear = 'Gesamt';
-
-    // Farben direkt definiert
     const colors = {
         pvToGrid: '#e67e22', pvToBatt: '#f39c12', pvToSite: '#f1c40f',
         battToGrid: '#d35400', battToSite: '#2ecc71', gridToSite: '#e74c3c',
@@ -63,29 +63,51 @@
     };
 
     window.onload = () => {
+        // LocalStorage & Init
         document.getElementById('inpPrice').value = localStorage.getItem('p') || "30";
-        document.getElementById('inpBase').value = localStorage.getItem('b') || "10";
+        document.getElementById('inpBase').value = localStorage.getItem('b') || "10.83";
         
-        document.getElementById('fileInput').addEventListener('change', handleFiles);
+        // AUTOMATISCHES EINLESEN
+        autoLoadFiles();
+
+        document.getElementById('fileInput').addEventListener('change', handleManualFiles);
         document.getElementById('inpPrice').addEventListener('input', updateUI);
         document.getElementById('inpBase').addEventListener('input', updateUI);
     };
 
-    function handleFiles(e) {
+    async function autoLoadFiles() {
+        const files = ['solar.csv', 'wp.csv'];
+        for (const f of files) {
+            try {
+                const response = await fetch(f);
+                if (response.ok) {
+                    const content = await response.text();
+                    processData(content);
+                    document.getElementById('statusInfo').innerText = "Dateien automatisch geladen!";
+                }
+            } catch (e) {
+                console.log(f + " nicht automatisch gefunden.");
+            }
+        }
+        updateUI();
+    }
+
+    function handleManualFiles(e) {
         const files = Array.from(e.target.files);
         files.forEach(file => {
             const reader = new FileReader();
-            reader.onload = (event) => {
-                const content = event.target.result;
-                if (content.includes("PvToSite")) {
-                    parseSun(content);
-                } else {
-                    parseWp(content);
-                }
-                updateUI();
-            };
+            reader.onload = (event) => processData(event.target.result);
             reader.readAsText(file);
         });
+    }
+
+    function processData(content) {
+        if (content.includes("PvToSite")) {
+            parseSun(content);
+        } else {
+            parseWp(content);
+        }
+        updateUI();
     }
 
     function parseSun(csv) {
@@ -142,65 +164,51 @@
         const price = parseFloat(document.getElementById('inpPrice').value) / 100;
         const base = parseFloat(document.getElementById('inpBase').value);
 
-        let totalPv = 0, totalWp = 0, totalGrid = 0, totalFeed = 0, totalHeat = 0, totalSelf = 0;
+        let tPv = 0, tWp = 0, tGrid = 0, tFeed = 0, tHeat = 0, tSelf = 0;
 
         const chartData = filteredMonths.map(m => {
             const s = sunData[m] || { p2g:0, p2b:0, p2s:0, b2g:0, b2s:0, g2s:0 };
             const w = wpData[m] || { elec:0, heat:0 };
-            
-            totalPv += (s.p2g + s.p2b + s.p2s);
-            totalWp += w.elec;
-            totalGrid += s.g2s;
-            totalFeed += (s.p2g + s.b2g);
-            totalSelf += (s.p2s + s.b2s);
-            totalHeat += w.heat;
-
+            tPv += (s.p2g + s.p2b + s.p2s); tWp += w.elec; tGrid += s.g2s;
+            tFeed += (s.p2g + s.b2g); tSelf += (s.p2s + s.b2s); tHeat += w.heat;
             return { month: m, ...s, wpElec: w.elec };
         });
 
-        // Stats füllen
-        document.getElementById('txtPv').innerText = totalPv.toFixed(0) + " kWh";
-        document.getElementById('txtWp').innerText = totalWp.toFixed(0) + " kWh";
-        document.getElementById('txtGrid').innerText = totalGrid.toFixed(0) + " kWh";
-        document.getElementById('txtFeed').innerText = totalFeed.toFixed(0) + " kWh";
-        const cost = (totalGrid * price) + (filteredMonths.length * base);
-        const gain = totalFeed * 0.08;
-        document.getElementById('txtSaldo').innerText = (cost - gain).toFixed(2) + " €";
-        document.getElementById('txtAut').innerText = (totalSelf / (totalSelf + totalGrid) * 100).toFixed(1) + " %";
-        document.getElementById('txtJaz').innerText = totalWp > 0 ? (totalHeat / totalWp).toFixed(2) : "-";
+        document.getElementById('txtPv').innerText = tPv.toFixed(0) + " kWh";
+        document.getElementById('txtWp').innerText = tWp.toFixed(0) + " kWh";
+        document.getElementById('txtGrid').innerText = tGrid.toFixed(0) + " kWh";
+        document.getElementById('txtFeed').innerText = tFeed.toFixed(0) + " kWh";
+        const cost = (tGrid * price) + (filteredMonths.length * base);
+        const earn = tFeed * 0.08;
+        document.getElementById('txtSaldo').innerText = (cost - earn).toFixed(2) + " €";
+        document.getElementById('txtAut').innerText = (tSelf / (tSelf + tGrid) * 100).toFixed(1) + " %";
+        document.getElementById('txtPvUse').innerText = (tSelf / tPv * 100).toFixed(1) + " %";
+        document.getElementById('txtJaz').innerText = tWp > 0 ? (tHeat / tWp).toFixed(2) : "-";
 
         if (chart) chart.destroy();
-        const ctx = document.getElementById('mainChart').getContext('2d');
-        chart = new Chart(ctx, {
+        chart = new Chart(document.getElementById('mainChart'), {
             type: 'bar',
             data: {
                 labels: filteredMonths,
                 datasets: [
-                    // Säule 1: Erzeugung
-                    { label: 'PV -> Netz', data: chartData.map(d=>d.p2g), backgroundColor: colors.pvToGrid, stack: '0' },
-                    { label: 'PV -> Akku', data: chartData.map(d=>d.p2b), backgroundColor: colors.pvToBatt, stack: '0' },
-                    { label: 'PV -> Haus', data: chartData.map(d=>d.p2s), backgroundColor: colors.pvToSite, stack: '0' },
-                    // Säule 2: Einspeisung
-                    { label: 'Einspeisung (PV)', data: chartData.map(d=>d.p2g), backgroundColor: '#fad7a0', stack: '1' },
-                    { label: 'Einspeisung (Akku)', data: chartData.map(d=>d.b2g), backgroundColor: colors.battToGrid, stack: '1' },
-                    // Säule 3: Eigen & Netz
-                    { label: 'Eigen (PV)', data: chartData.map(d=>d.p2s), backgroundColor: colors.pvToSite, stack: '2' },
-                    { label: 'Eigen (Akku)', data: chartData.map(d=>d.b2s), backgroundColor: colors.battToSite, stack: '2' },
-                    { label: 'Netzbezug', data: chartData.map(d=>d.g2s), backgroundColor: colors.gridToSite, stack: '2' },
-                    // Säule 4: WP
+                    { label: 'PV->Netz', data: chartData.map(d=>d.p2g), backgroundColor: colors.pvToGrid, stack: '0' },
+                    { label: 'PV->Akku', data: chartData.map(d=>d.p2b), backgroundColor: colors.pvToBatt, stack: '0' },
+                    { label: 'PV->Haus', data: chartData.map(d=>d.p2s), backgroundColor: colors.pvToSite, stack: '0' },
+                    
+                    { label: 'Einspeis. (PV)', data: chartData.map(d=>d.p2g), backgroundColor: '#fad7a0', stack: '1' },
+                    { label: 'Einspeis. (Akku)', data: chartData.map(d=>d.b2g), backgroundColor: colors.battToGrid, stack: '1' },
+                    
+                    { label: 'Haus (PV)', data: chartData.map(d=>d.p2s), backgroundColor: colors.pvToSite, stack: '2' },
+                    { label: 'Haus (Akku)', data: chartData.map(d=>d.b2s), backgroundColor: colors.battToSite, stack: '2' },
+                    { label: 'Haus (Netz)', data: chartData.map(d=>d.g2s), backgroundColor: colors.gridToSite, stack: '2' },
+                    
                     { label: 'WP Strom', data: chartData.map(d=>d.wpElec), backgroundColor: colors.wp, stack: '3' }
                 ]
             },
             options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: { 
-                    x: { stacked: false }, 
-                    y: { stacked: true, title: { display: true, text: 'kWh' } } 
-                },
-                plugins: {
-                    legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } }
-                }
+                responsive: true, maintainAspectRatio: false,
+                scales: { x: { stacked: false }, y: { stacked: true } },
+                plugins: { legend: { position: 'bottom', labels: { boxWidth: 10, font: { size: 10 } } } }
             }
         });
     }

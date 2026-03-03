@@ -2,7 +2,7 @@
 <html lang="de">
 <head>
     <meta charset="UTF-8">
-    <title>Energie-Monitor - Spalten-Fix JAZ</title>
+    <title>Energie-Monitor - Final Pro</title>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.3.0/papaparse.min.js"></script>
     <style>
@@ -14,13 +14,14 @@
         .stat-card h3 { font-size: 0.7rem; text-transform: uppercase; color: #666; margin: 0; }
         .stat-card p { font-size: 1.1rem; font-weight: bold; margin: 5px 0; }
         .tabs { display: flex; gap: 8px; margin-bottom: 20px; justify-content: center; flex-wrap: wrap; }
-        .tab-btn { padding: 8px 16px; border-radius: 20px; border: 1px solid #3498db; background: white; color: #3498db; cursor: pointer; font-weight: bold; }
+        .tab-btn { padding: 8px 16px; border-radius: 20px; border: 1px solid #3498db; background: white; color: #3498db; cursor: pointer; font-weight: bold; transition: 0.2s; }
         .tab-btn.active { background: #3498db; color: white; }
-        .range-picker { display: none; justify-content: center; gap: 15px; margin-bottom: 20px; align-items: center; background: #e9ecef; padding: 10px; border-radius: 10px; }
+        .range-picker { display: none; justify-content: center; gap: 15px; margin-bottom: 20px; align-items: center; background: #dfe6e9; padding: 12px; border-radius: 10px; }
         .range-picker.active { display: flex; }
         .charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
         .full-chart { grid-column: span 2; height: 400px; }
-        .half-chart { height: 300px; }
+        .half-chart { height: 320px; }
+        input[type="file"] { margin-bottom: 10px; }
     </style>
 </head>
 <body>
@@ -28,7 +29,7 @@
 <div class="container">
     <div class="card" style="text-align: center; border: 2px dashed #3498db;">
         <input type="file" id="fileInput" multiple accept=".csv">
-        <div id="status" style="margin-top:10px; font-weight:bold; color:#3498db;">Daten-Sync aktiv (Auto-Load solar.csv/wp.csv)</div>
+        <div id="status" style="font-size: 0.9rem; font-weight: bold; color: #3498db;">Bereit für Daten (solar.csv & wp.csv)</div>
     </div>
 
     <div id="tabBar" class="tabs"></div>
@@ -48,7 +49,7 @@
     </div>
 
     <div class="charts-grid">
-        <div class="card full-chart"><h3>Energie-Monitor (kWh)</h3><canvas id="chartMain"></canvas></div>
+        <div class="card full-chart"><h3>Energie-Flüsse (kWh)</h3><canvas id="chartMain"></canvas></div>
         <div class="card half-chart"><h3>Autarkie-Trend (%)</h3><canvas id="chartAutarkie"></canvas></div>
         <div class="card half-chart"><h3>WP Effizienz (JAZ)</h3><canvas id="chartJaz"></canvas></div>
         <div class="card full-chart"><h3>Außentemperatur (°C)</h3><canvas id="chartTemp"></canvas></div>
@@ -82,12 +83,16 @@
 
     async function autoFetch() {
         ['solar.csv', 'wp.csv'].forEach(async f => {
-            try { const r = await fetch(f); if(r.ok) processCSV(await r.text()); } catch(e){}
+            try { 
+                const r = await fetch(f); 
+                if(r.ok) processCSV(await r.text()); 
+            } catch(e) { console.log("Auto-Load Info:", f, "nicht gefunden."); }
         });
     }
 
     function processCSV(csv) {
         if (csv.includes("PvToSite")) {
+            // Solar-Parser
             const res = Papa.parse(csv, { header: true, skipEmptyLines: true });
             res.data.forEach(row => {
                 const m = (row.Time || row.time || "").substring(0, 7);
@@ -101,19 +106,25 @@
                 sunStore[m].g2s += parseFloat(row.GridToSite) || 0;
             });
         } else {
-            // Angepasst an deinen Screenshot (Index-basiert)
-            const rows = Papa.parse(csv, { delimiter: ";", skipEmptyLines: true }).data;
+            // WP-Parser spezialisiert auf dein Format
+            // Erkennt automatisch , oder ;
+            const res = Papa.parse(csv, { skipEmptyLines: true });
+            const rows = res.data;
+            
             rows.forEach(row => {
-                // Zeitstempel steht in Spalte 2 (Index 1) z.B. 2026-02-19...
+                // Suche das Datum (Format 2026-03-01...) steht in Spalte 2 (Index 1)
                 const dateStr = row[1] || "";
                 if (dateStr.length >= 7 && dateStr.includes("-")) {
                     const m = dateStr.substring(0, 7);
                     if (!wpStore[m]) wpStore[m] = { elec: 0, heat: 0, tempSum: 0, count: 0 };
                     
-                    // Spalte 3: Wärme | Spalte 18: Elektrisch | Spalte 23: Außenfühler
+                    // Korrigierte Indizes basierend auf deiner Text-Vorschau:
+                    // Index 2: Wärme Gesamt (Wärmepumpe kWh)
+                    // Index 12: Elektr. Energie Gesamt (Wärmepumpe kWh)
+                    // Index 21: Außentemperatur (C)
                     const h = parseFloat(row[2]?.toString().replace(',','.')) || 0;
-                    const e = parseFloat(row[17]?.toString().replace(',','.')) || 0;
-                    const t = parseFloat(row[22]?.toString().replace(',','.')) || 0;
+                    const e = parseFloat(row[12]?.toString().replace(',','.')) || 0;
+                    const t = parseFloat(row[21]?.toString().replace(',','.')) || 0;
 
                     wpStore[m].heat += h;
                     wpStore[m].elec += e;
@@ -140,7 +151,10 @@
             tabBar.appendChild(btn);
         });
         const sS = document.getElementById('selStart'), sE = document.getElementById('selEnd');
-        if (sS.options.length === 0) allMonths.forEach(m => { sS.add(new Option(m, m)); sE.add(new Option(m, m)); });
+        if (sS.options.length === 0) {
+            allMonths.forEach(m => { sS.add(new Option(m, m)); sE.add(new Option(m, m)); });
+            sE.selectedIndex = allMonths.length - 1;
+        }
     }
 
     function render() {
@@ -164,12 +178,13 @@
             
             return { 
                 m, ...s, wpE: w.elec, 
-                jaz: (w.elec > 0) ? (w.heat / w.elec) : 0, 
-                temp: w.tempSum / w.count, 
+                jaz: (w.elec > 0.1) ? (w.heat / w.elec) : 0, 
+                temp: w.tempSum / (w.count || 1), 
                 aut: (s.p2s+s.b2s+s.g2s)>0 ? ((s.p2s+s.b2s)/(s.p2s+s.b2s+s.g2s)*100) : 0 
             };
         });
 
+        // Stats Update
         document.getElementById('txtAut').innerText = (sSelf+sGrid) > 0 ? (sSelf/(sSelf+sGrid)*100).toFixed(1) + "%" : "-";
         document.getElementById('txtPv').innerText = sPv.toFixed(0) + " kWh";
         document.getElementById('txtWp').innerText = sWp.toFixed(0) + " kWh";
@@ -179,12 +194,14 @@
         document.getElementById('txtSaldo').innerText = ((sGrid * 0.3) - (sFeed * 0.08)).toFixed(2) + " €";
 
         updateCharts(filtered, data, sPv, sSelf, sGrid);
+        document.getElementById('status').innerText = "Daten geladen: " + allMonths.length + " Monate erkannt.";
     }
 
     function updateCharts(labels, data, tPv, tSelf, tGrid) {
         Object.values(charts).forEach(c => c?.destroy());
-        const cfg = { responsive: true, maintainAspectRatio: false };
+        const cfg = { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: 'bottom', labels: { boxWidth: 10 } } } };
 
+        // 1. Energiefluss
         charts.main = new Chart(document.getElementById('chartMain'), {
             type: 'bar',
             data: {
@@ -197,36 +214,40 @@
                     { label: 'WP Strom', data: data.map(d=>d.wpE), backgroundColor: COLORS.wp, stack: '3' }
                 ]
             },
-            options: { ...cfg, scales: { x: { stacked: false }, y: { stacked: true } } }
+            options: { ...cfg, scales: { x: { stacked: false }, y: { stacked: true, title: { display: true, text: 'kWh' } } } }
         });
 
+        // 2. Autarkie
         charts.autarkie = new Chart(document.getElementById('chartAutarkie'), {
             type: 'line',
-            data: { labels: labels, datasets: [{ label: 'Autarkie %', data: data.map(d=>d.aut), borderColor: COLORS.aut, tension: 0.3 }] },
+            data: { labels: labels, datasets: [{ label: 'Autarkie %', data: data.map(d=>d.aut), borderColor: COLORS.aut, tension: 0.3, fill: false }] },
             options: { ...cfg, scales: { y: { min: 0, max: 100 } } }
         });
 
+        // 3. JAZ
         charts.jaz = new Chart(document.getElementById('chartJaz'), {
             type: 'bar',
             data: { labels: labels, datasets: [{ label: 'Monats-JAZ', data: data.map(d=>d.jaz), backgroundColor: COLORS.jaz }] },
-            options: { ...cfg, scales: { y: { min: 0, suggestedMax: 5 } } }
+            options: { ...cfg, scales: { y: { min: 0, suggestedMax: 5, title: { display: true, text: 'JAZ' } } } }
         });
 
+        // 4. Temperatur
         charts.temp = new Chart(document.getElementById('chartTemp'), {
             type: 'line',
-            data: { labels: labels, datasets: [{ label: 'Außentemperatur °C', data: data.map(d=>d.temp), borderColor: COLORS.temp, fill: true, backgroundColor: 'rgba(52, 152, 219, 0.1)' }] },
-            options: cfg
+            data: { labels: labels, datasets: [{ label: 'Außentemperatur °C', data: data.map(d=>d.temp), borderColor: COLORS.temp, backgroundColor: 'rgba(52, 152, 219, 0.1)', fill: true, tension: 0.3 }] },
+            options: { ...cfg, scales: { y: { title: { display: true, text: '°C' } } } }
         });
 
+        // 5. & 6. Donuts
         charts.pv = new Chart(document.getElementById('chartPvDist'), {
             type: 'doughnut',
-            data: { labels: ['Eigenverbrauch', 'Export'], datasets: [{ data: [tSelf, tPv-tSelf], backgroundColor: [COLORS.pSite, COLORS.pGrid] }] },
+            data: { labels: ['Eigenverbrauch', 'Einspeisung'], datasets: [{ data: [tSelf, tPv - tSelf], backgroundColor: [COLORS.pSite, COLORS.pGrid] }] },
             options: cfg
         });
 
         charts.src = new Chart(document.getElementById('chartSource'), {
             type: 'doughnut',
-            data: { labels: ['PV/Akku', 'Netz'], datasets: [{ data: [tSelf, tGrid], backgroundColor: [COLORS.bSite, COLORS.gSite] }] },
+            data: { labels: ['PV/Akku', 'Netzbezug'], datasets: [{ data: [tSelf, tGrid], backgroundColor: [COLORS.bSite, COLORS.gSite] }] },
             options: cfg
         });
     }
